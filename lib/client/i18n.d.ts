@@ -12,10 +12,19 @@ declare const zh: {
     'menu.markdown': string;
     'menu.pdf': string;
     'menu.image': string;
+    'menu.select': string;
     'role.user': string;
     'role.assistant': string;
     'toast.imageFail': string;
     'toast.cancelled': string;
+    'panel.title': string;
+    'panel.selectAll': string;
+    'panel.selectNone': string;
+    'panel.selected': string;
+    'panel.format': string;
+    'panel.export': string;
+    'panel.cancel': string;
+    'panel.empty': string;
 };
 /** Dictionary key union. */
 export type ExportKey = keyof typeof zh;

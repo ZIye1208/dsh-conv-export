@@ -17,13 +17,14 @@ Export the current DeepSeek Harness conversation as **Markdown**, **PDF** (print
 ## Features
 
 - **Header export button** (download glyph) registered into the `conversation.session.header.actions` slot — additive, safely uninstalled, and mirrors its open state via `aria-pressed`.
-- **Dropdown menu** with three sinks:
+- **Dropdown menu** with three sinks plus turn selection:
   - **Markdown (.md)** — client-side download; assistant turns are serialized back from rendered HTML (headings, lists, fenced code with language, tables, blockquotes, links, inline emphasis).
   - **PDF (download)** — tiled rasterization sliced into A4-proportioned pages (page boundaries align with tile boundaries, page count unbounded, peak memory bounded to one tile), downloaded as a self-contained multi-page PDF. No print window, no dialog: the app tab never freezes.
   - **Long image (PNG)** — tiled rasterization (`foreignObject` windows via `translateY`, tile height = A4 page height × 2) plus a streaming PNG encoder (tile-level adaptive row filtering → incremental `CompressionStream('deflate')` compression), images inlined as data URLs. The PNG spec has no height cap; the sane ceiling is ~176 A4 pages (200,000 CSS px). Environments without `CompressionStream` fall back to the legacy single-canvas truncation path (16000px).
+  - **Select turns…** — opens a turn-selection panel: check turns individually (role + content preview, all checked by default), select all/none with a live count, pick the export format, and confirm to export only the checked turns (e.g. drop failed attempts or off-topic tangents). During export the confirm button shows tile progress; clicking it again or Cancel aborts.
 - **Sensible file names** from the session title (sanitized, capped).
 - Follows the harness `--dsw-alias-*` design tokens; menu labels switch zh/en by document language.
-- Menu hygiene: Escape or outside-click closes; rasterizing menu items show live `done/total` progress and re-clicking the same item cancels the in-flight export; a toast reports long-image raster failures.
+- Menu hygiene: Escape or outside-click closes; rasterizing menu items show live `done/total` progress and re-clicking the same item cancels the in-flight export; a toast reports long-image raster failures. The selection panel closes via Escape or backdrop click when idle, and via the Cancel button mid-export.
 
 ## Install
 

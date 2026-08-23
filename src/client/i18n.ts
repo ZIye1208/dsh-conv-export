@@ -13,10 +13,19 @@ const zh = {
   'menu.markdown': 'Markdown (.md)',
   'menu.pdf': 'PDF (下载)',
   'menu.image': '长图 (PNG)',
+  'menu.select': '选择回合导出…',
   'role.user': '用户',
   'role.assistant': '助手',
   'toast.imageFail': '长图生成失败，请改用 Markdown 或 PDF',
   'toast.cancelled': '导出已取消',
+  'panel.title': '选择要导出的对话回合',
+  'panel.selectAll': '全选',
+  'panel.selectNone': '全不选',
+  'panel.selected': '已选',
+  'panel.format': '格式',
+  'panel.export': '导出',
+  'panel.cancel': '取消',
+  'panel.empty': '请至少选择一个回合',
 } satisfies Record<string, string>
 
 /** Dictionary key union. */
@@ -30,10 +39,19 @@ const en: Record<ExportKey, string> = {
   'menu.markdown': 'Markdown (.md)',
   'menu.pdf': 'PDF (download)',
   'menu.image': 'Long image (PNG)',
+  'menu.select': 'Select turns…',
   'role.user': 'User',
   'role.assistant': 'Assistant',
   'toast.imageFail': 'Long-image render failed — use Markdown or PDF instead',
   'toast.cancelled': 'Export cancelled',
+  'panel.title': 'Select turns to export',
+  'panel.selectAll': 'All',
+  'panel.selectNone': 'None',
+  'panel.selected': 'Selected',
+  'panel.format': 'Format',
+  'panel.export': 'Export',
+  'panel.cancel': 'Cancel',
+  'panel.empty': 'Select at least one turn',
 }
 
 /**
