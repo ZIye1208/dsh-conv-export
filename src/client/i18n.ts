@@ -16,6 +16,7 @@ const zh = {
   'role.user': '用户',
   'role.assistant': '助手',
   'toast.imageFail': '长图生成失败，请改用 Markdown 或 PDF',
+  'toast.cancelled': '导出已取消',
 } satisfies Record<string, string>
 
 /** Dictionary key union. */
@@ -32,6 +33,7 @@ const en: Record<ExportKey, string> = {
   'role.user': 'User',
   'role.assistant': 'Assistant',
   'toast.imageFail': 'Long-image render failed — use Markdown or PDF instead',
+  'toast.cancelled': 'Export cancelled',
 }
 
 /**

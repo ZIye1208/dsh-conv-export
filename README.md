@@ -19,11 +19,11 @@ Export the current DeepSeek Harness conversation as **Markdown**, **PDF** (print
 - **Header export button** (download glyph) registered into the `conversation.session.header.actions` slot — additive, safely uninstalled, and mirrors its open state via `aria-pressed`.
 - **Dropdown menu** with three sinks:
   - **Markdown (.md)** — client-side download; assistant turns are serialized back from rendered HTML (headings, lists, fenced code with language, tables, blockquotes, links, inline emphasis).
-  - **PDF (download)** — the conversation is rasterized, sliced into A4-proportioned pages, and downloaded as a self-contained multi-page PDF. No print window, no dialog: the app tab never freezes.
-  - **Long image (PNG)** — offscreen render measured and rasterized through SVG `foreignObject` at 2x, images inlined as data URLs, downloaded as one tall PNG (height capped at 16000px).
+  - **PDF (download)** — tiled rasterization sliced into A4-proportioned pages (page boundaries align with tile boundaries, page count unbounded, peak memory bounded to one tile), downloaded as a self-contained multi-page PDF. No print window, no dialog: the app tab never freezes.
+  - **Long image (PNG)** — tiled rasterization (`foreignObject` windows via `translateY`, tile height = A4 page height × 2) plus a streaming PNG encoder (tile-level adaptive row filtering → incremental `CompressionStream('deflate')` compression), images inlined as data URLs. The PNG spec has no height cap; the sane ceiling is ~176 A4 pages (200,000 CSS px). Environments without `CompressionStream` fall back to the legacy single-canvas truncation path (16000px).
 - **Sensible file names** from the session title (sanitized, capped).
 - Follows the harness `--dsw-alias-*` design tokens; menu labels switch zh/en by document language.
-- Menu hygiene: Escape or outside-click closes; a toast reports long-image raster failures.
+- Menu hygiene: Escape or outside-click closes; rasterizing menu items show live `done/total` progress and re-clicking the same item cancels the in-flight export; a toast reports long-image raster failures.
 
 ## Install
 
@@ -48,7 +48,7 @@ Open any conversation, click the download icon in the session header, pick a for
 
 - The host half is an empty cordis registration shell; all behavior lives in the browser bundle (`lib/client.js`), mounted by the stock loader with zero core changes.
 - Extraction walks `[data-conversation-scroll]` in document order, pairing user rows (`[class*="_userRow"]` bubbles) with assistant markdown containers (`[class*="_markdown_"]`) — the stock renderer's stable class contracts.
-- The long-image path serializes a clean clone (explicit XHTML namespace, no offscreen offsets) into an SVG `foreignObject`, validates it with `DOMParser`, then rasterizes on a 2x canvas. External images are fetched and inlined first; unreachable ones are dropped rather than tainting the canvas.
+- The long-image/PDF paths use tiled rasterization: an offscreen stage stays mounted as the clone source, and each tile serializes a clean clone (explicit XHTML namespace, no offscreen offsets, `translateY(−offset)` window displacement) into an SVG `foreignObject`, validates it with `DOMParser`, then rasterizes onto an independent 2x canvas (tile height = A4 page height × 2). External images are fetched and inlined first; unreachable ones are dropped rather than tainting the canvas. PNG rows stream through a tile-level adaptive filter into `CompressionStream('deflate')` incremental compression — exactly the zlib stream the PNG spec requires.
 
 ## Known limitations
 

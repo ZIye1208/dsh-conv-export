@@ -6,7 +6,7 @@
 declare class ExportController {
     private menu;
     private installed;
-    private busy;
+    private running;
     /** Install the menu DOM and document listeners. Idempotent. */
     install(): void;
     /** Remove every installed effect. Idempotent. */
@@ -29,6 +29,7 @@ declare class ExportController {
     private readonly onKeyDown;
     /**
      * Run one export sink against the currently rendered transcript.
+     * 光栅导出进行中时，再次点击同一菜单项触发取消。
      * @param kind - which sink to run.
      */
     private run;

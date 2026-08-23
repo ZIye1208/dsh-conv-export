@@ -15,11 +15,11 @@
 - **头部导出按钮**（下载图标）注册进 `conversation.session.header.actions` 插槽——可叠加、可安全卸载，打开状态经 `aria-pressed` 镜像。
 - **下拉菜单**三种导出：
   - **Markdown (.md)**——客户端下载；助手回复从渲染 HTML 反向序列化（标题、列表、带语言的围栏代码、表格、引用、链接、行内强调）。
-  - **PDF（下载）**——对话光栅化后按 A4 比例切页，下载自包含的多页 PDF。无打印窗、无弹窗：应用标签页永不冻结。
-  - **长图 (PNG)**——离屏渲染测量后经 SVG `foreignObject` 以 2x 光栅化，图片内联为 data URL，下载为一张长 PNG（高度上限 16000px）。
+  - **PDF（下载）**——对话分片光栅后按 A4 比例切页（页界与片界对齐、页数无上限、峰值内存恒为单片量级），下载自包含的多页 PDF。无打印窗、无弹窗：应用标签页永不冻结。
+  - **长图 (PNG)**——分片光栅（`foreignObject` 窗口 `translateY` 位移，片高 = A4 页高 × 2）+ 流式 PNG 编码（片级自适应行过滤 → `CompressionStream('deflate')` 增量压缩），图片内联为 data URL。PNG 规范无高度上限，理智上限约 176 页 A4（200,000 CSS px）；无 `CompressionStream` 的环境退回旧的单 canvas 截断路径（16000px）。
 - **合理的文件名**取自会话标题（净化、限长）。
 - 跟随 Harness `--dsw-alias-*` 设计令牌；菜单文案按文档语言自动切换中/英文。
-- 菜单卫生：Escape 或点击外部关闭；长图光栅失败时给出 toast 提示。
+- 菜单卫生：Escape 或点击外部关闭；光栅导出进行中菜单项实时显示「done/total」进度，再次点击同一菜单项即可取消；长图光栅失败时给出 toast 提示。
 
 ## 安装
 
@@ -44,7 +44,7 @@ dsh web   # 重启服务以加载插件
 
 - 宿主半边是空的 cordis 注册外壳；全部行为位于浏览器 bundle（`lib/client.js`），由标准加载器挂载，零核心改动。
 - 提取按文档顺序遍历 `[data-conversation-scroll]`，配对用户行（`[class*="_userRow"]` 气泡）与助手 markdown 容器（`[class*="_markdown_"]`）——标准渲染器的稳定 class 契约。
-- 长图路径序列化干净克隆（显式 XHTML 命名空间、无离屏偏移）进 SVG `foreignObject`，用 `DOMParser` 校验后在 2x canvas 光栅化。外部图片先抓取内联；不可达的图片被丢弃而非污染画布。
+- 长图/PDF 路径为分片光栅：离屏舞台存活期内作为克隆源，逐片序列化干净克隆（显式 XHTML 命名空间、无离屏偏移、经 `translateY(−offset)` 窗口位移）进 SVG `foreignObject`，`DOMParser` 校验后在独立 2x canvas 光栅化（片高 = A4 页高 × 2）。外部图片先抓取内联；不可达的图片被丢弃而非污染画布。PNG 经流式编码器逐片取像素、逐行过滤（片级自适应选过滤器，跨片行连续性经原始行携带）后交 `CompressionStream('deflate')` 增量压缩——恰为 PNG 规范要求的 zlib 流。
 
 ## 已知限制
 

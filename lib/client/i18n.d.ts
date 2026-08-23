@@ -15,6 +15,7 @@ declare const zh: {
     'role.user': string;
     'role.assistant': string;
     'toast.imageFail': string;
+    'toast.cancelled': string;
 };
 /** Dictionary key union. */
 export type ExportKey = keyof typeof zh;

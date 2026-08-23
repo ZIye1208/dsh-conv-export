@@ -1,9 +1,12 @@
 /**
  * The export controller: owns the header-triggered dropdown menu (plain DOM
  * — no React, so it never couples to the shell's React version) and
- * dispatches the three sinks (Markdown download, PDF print window, long
- * PNG). Extraction runs at click time, so the export always reflects the
+ * dispatches the three sinks (Markdown download, PDF download, long PNG).
+ * Extraction runs at click time, so the export always reflects the
  * transcript exactly as the reader sees it.
+ *
+ * 光栅导出（PDF/PNG）带分片进度：进行中菜单项实时显示「done/total」
+ * 计数；再次点击同一菜单项取消进行中的导出（AbortError → 已取消提示）。
  *
  * Lifecycle: `install()` from the cordis apply (menu mount + outside-click
  * close), `uninstall()` on plugin unload.
@@ -16,6 +19,12 @@ import { t } from './i18n.ts'
 /** Menu entry ids. */
 type ExportKind = 'markdown' | 'pdf' | 'image'
 
+/** 进行中的光栅导出：类别 + 取消控制器。 */
+interface RunningExport {
+  readonly kind: ExportKind
+  readonly abort: AbortController
+}
+
 /**
  * The singleton controller. A page hosts exactly one conversation pane, so
  * a module-level instance is the right ownership; cordis install/uninstall
@@ -24,7 +33,7 @@ type ExportKind = 'markdown' | 'pdf' | 'image'
 class ExportController {
   private menu: HTMLElement | null = null
   private installed = false
-  private busy = false
+  private running: RunningExport | null = null
 
   /** Install the menu DOM and document listeners. Idempotent. */
   install(): void {
@@ -127,28 +136,46 @@ class ExportController {
 
   /**
    * Run one export sink against the currently rendered transcript.
+   * 光栅导出进行中时，再次点击同一菜单项触发取消。
    * @param kind - which sink to run.
    */
   private async run(kind: ExportKind): Promise<void> {
-    if (this.busy) return
+    if (this.running !== null) {
+      if (this.running.kind === kind) this.running.abort.abort()
+      return
+    }
     const messages = extractMessages()
     if (messages.length === 0) return
     const title = readTitle() ?? 'Conversation'
     const stem = safeFileStem(title)
-    this.busy = true
+    const abort = new AbortController()
+    this.running = { kind, abort }
+    const button = this.menu?.querySelector(`[data-export-kind="${kind}"]`) ?? null
+    const baseLabel = kind === 'markdown' ? t('menu.markdown') : kind === 'pdf' ? t('menu.pdf') : t('menu.image')
     try {
       if (kind === 'markdown') {
         downloadBlob(`${stem}.md`, 'text/markdown;charset=utf-8', buildMarkdown(title, messages))
       } else if (kind === 'pdf') {
-        await exportPdf(title, messages)
+        await exportPdf(title, messages, {
+          signal: abort.signal,
+          onProgress: (done, total) => { setItemProgress(button, baseLabel, done, total) },
+        })
       } else {
-        await exportImage(title, messages)
+        await exportImage(title, messages, {
+          signal: abort.signal,
+          onProgress: (done, total) => { setItemProgress(button, baseLabel, done, total) },
+        })
       }
-    } catch {
-      // Long-image raster failures degrade to a visible toast.
-      this.toast(t('toast.imageFail'))
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        this.toast(t('toast.cancelled'))
+      } else {
+        // Raster failures degrade to a visible toast.
+        this.toast(t('toast.imageFail'))
+      }
     } finally {
-      this.busy = false
+      this.running = null
+      if (button instanceof HTMLElement) button.textContent = baseLabel
       this.close()
     }
   }
@@ -164,6 +191,13 @@ class ExportController {
     document.body.appendChild(el)
     setTimeout(() => { el.remove() }, 3200)
   }
+}
+
+/**
+ * 菜单项进度文案：`基础标签 + done/total`（null 安全，菜单不存在时静默）。
+ */
+function setItemProgress(button: Element | null, baseLabel: string, done: number, total: number): void {
+  if (button instanceof HTMLElement) button.textContent = `${baseLabel} ${done}/${total}`
 }
 
 /** The page-wide controller instance. */
