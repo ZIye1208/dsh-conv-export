@@ -313,6 +313,7 @@ class ExportController {
     messages.forEach((message, i) => {
       const row = document.createElement('label')
       row.setAttribute('data-dsh-conv-export-panel-item', '')
+      row.setAttribute('data-role', message.role)
       const box = document.createElement('input')
       box.type = 'checkbox'
       box.checked = true
@@ -327,6 +328,8 @@ class ExportController {
       const text = document.createElement('span')
       text.setAttribute('data-dsh-conv-export-panel-item-text', '')
       text.textContent = previewOf(message)
+      // 悬停提示展示更长内容（预览截断的补充）。
+      text.title = message.text.slice(0, 300)
       row.append(box, role, text)
       list.appendChild(row)
     })
