@@ -14,6 +14,14 @@
  * 键盘/外点关闭纪律与设计令牌；导出进行中确认按钮显示分片进度，
  * 再次点击或「取消」中止。
  *
+ * 批量导出（batch export，能力吸收自 dsh-companion）：菜单第五项打开
+ * 会话选择面板——拉取历史会话列表（宿主 GET /conv-export/sessions）、
+ * 按标题/ID 实时筛选、逐个勾选、全选/全不选（作用于当前筛选结果并与
+ * 已有选择取并集）、已选计数；确认后 POST /conv-export/batch 将所选
+ * 会话各生成一份 Markdown 打包为 ZIP 下载。打包进行中确认按钮显示
+ * 「正在打包…」，再次点击或「取消」中止；与回合面板共用遮罩/对话框
+ * 骨架与关闭纪律（打包期间 Esc / 遮罩不关闭，以中止按钮为唯一出口）。
+ *
  * Lifecycle: `install()` from the cordis apply (menu mount + outside-click
  * close), `uninstall()` on plugin unload.
  */
@@ -21,13 +29,14 @@ import { extractMessages, readTitle, resolveScope, safeFileStem } from './extrac
 import type { ExtractedMessage } from './extract.ts'
 import { buildMarkdown } from './markdown.ts'
 import { downloadBlob, exportImage, exportPdf } from './exporters.ts'
+import { fetchBatchSessions, runBatchExport, type BatchSession } from './batch.ts'
 import { t } from './i18n.ts'
 
 /** Export sink ids. */
 type ExportKind = 'markdown' | 'pdf' | 'image'
 
-/** Menu entry ids — 'select' opens the turn-selection panel. */
-type MenuKind = ExportKind | 'select'
+/** Menu entry ids — 'select' opens the turn panel, 'batch' the session panel. */
+type MenuKind = ExportKind | 'select' | 'batch'
 
 /** 进行中的光栅导出：类别 + 取消控制器。 */
 interface RunningExport {
@@ -51,6 +60,14 @@ export function previewOf(message: ExtractedMessage): string {
   return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
 }
 
+/** 面板列表内的提示行（加载中 / 加载失败 / 空 / 无匹配）。 */
+function note(text: string): HTMLDivElement {
+  const el = document.createElement('div')
+  el.setAttribute('data-dsh-conv-export-panel-note', '')
+  el.textContent = text
+  return el
+}
+
 /**
  * The singleton controller. A page hosts exactly one conversation pane, so
  * a module-level instance is the right ownership; cordis install/uninstall
@@ -58,10 +75,14 @@ export function previewOf(message: ExtractedMessage): string {
  */
 class ExportController {
   private menu: HTMLElement | null = null
-  /** 选择面板（backdrop 元素）；null = 未打开。 */
+  /** 选择面板（backdrop 元素；回合面板与批量面板共用此槽位）；null = 未打开。 */
   private panel: HTMLElement | null = null
   private installed = false
   private running: RunningExport | null = null
+  /** 批量面板：会话列表拉取的取消控制器（面板关闭时中止）。 */
+  private batchListAbort: AbortController | null = null
+  /** 批量面板：打包请求的取消控制器（非 null 期间面板不可关闭）。 */
+  private batchRun: AbortController | null = null
 
   /** Install the menu DOM and document listeners. Idempotent. */
   install(): void {
@@ -127,9 +148,10 @@ class ExportController {
       { kind: 'pdf', label: t('menu.pdf') },
       { kind: 'image', label: t('menu.image') },
       { kind: 'select', label: t('menu.select') },
+      { kind: 'batch', label: t('menu.batch') },
     ]
     for (const entry of entries) {
-      // 分隔线：区分「快捷导出」与「选择导出」。
+      // 分隔线：区分「快捷导出」与「选择 / 批量导出」。
       if (entry.kind === 'select') {
         const divider = document.createElement('hr')
         menu.appendChild(divider)
@@ -142,6 +164,10 @@ class ExportController {
       btn.addEventListener('click', () => {
         if (entry.kind === 'select') {
           this.openSelection()
+          return
+        }
+        if (entry.kind === 'batch') {
+          this.openBatch()
           return
         }
         void this.run(entry.kind)
@@ -163,9 +189,9 @@ class ExportController {
   private readonly onOutside = (e: PointerEvent): void => {
     const target = e.target
     if (!(target instanceof Node)) return
-    // 选择面板打开：点击遮罩关闭（导出进行中不允许，须经取消按钮）。
+    // 选择/批量面板打开：点击遮罩关闭（导出/打包进行中不允许，须经取消按钮）。
     if (this.panel !== null) {
-      if (this.panel === target && this.running === null) this.closePanel()
+      if (this.panel === target && this.running === null && this.batchRun === null) this.closePanel()
       return
     }
     if (this.menu === null || this.menu.hidden) return
@@ -178,7 +204,7 @@ class ExportController {
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape') return
     if (this.panel !== null) {
-      if (this.running === null) this.closePanel()
+      if (this.running === null && this.batchRun === null) this.closePanel()
       return
     }
     this.close()
@@ -258,8 +284,12 @@ class ExportController {
 
   // -------------------------------------------------------- selection panel
 
-  /** 关闭选择面板（幂等）。 */
+  /** 关闭选择/批量面板（幂等）：中止批量面板的在途请求后移除 DOM。 */
   private closePanel(): void {
+    this.batchListAbort?.abort()
+    this.batchListAbort = null
+    this.batchRun?.abort()
+    this.batchRun = null
     this.panel?.remove()
     this.panel = null
   }
@@ -270,6 +300,8 @@ class ExportController {
    * 面板随导出结束（含取消）自动关闭。
    */
   private openSelection(): void {
+    // 批量打包进行中不开回合面板（其完成回调会关闭当前面板）。
+    if (this.batchRun !== null) return
     const messages = extractMessages()
     if (messages.length === 0) return
     this.close()
@@ -419,6 +451,245 @@ class ExportController {
     backdrop.appendChild(panel)
     document.body.appendChild(backdrop)
     this.panel = backdrop
+  }
+
+  // ----------------------------------------------------------- batch panel
+
+  /**
+   * 打开批量导出面板（能力吸收自 dsh-companion）：拉取历史会话列表，
+   * 按标题/ID 实时筛选、逐个勾选、全选/全不选（作用于当前筛选结果并与
+   * 已有选择取并集）、已选计数；确认后将所选会话各生成一份 Markdown
+   * 打包为 ZIP 下载（单次最多 100 个会话，自动去重，读取失败自动跳过）。
+   * 打包进行中确认按钮显示「正在打包…」，再次点击或「取消」中止。
+   */
+  private openBatch(): void {
+    // 单会话导出进行中不开面板（其完成回调会关闭本面板）。
+    if (this.running !== null) return
+    this.close()
+    this.closePanel()
+
+    const checked = new Set<string>()
+    let sessions: readonly BatchSession[] = []
+    let keyword = ''
+    let loading = true
+    let loadError = false
+
+    const backdrop = document.createElement('div')
+    backdrop.setAttribute('data-dsh-conv-export-panel-backdrop', '')
+    const panel = document.createElement('div')
+    panel.setAttribute('data-dsh-conv-export-panel', '')
+    panel.setAttribute('role', 'dialog')
+    panel.setAttribute('aria-modal', 'true')
+    panel.setAttribute('aria-label', t('batch.title'))
+
+    // 标题。
+    const title = document.createElement('div')
+    title.setAttribute('data-dsh-conv-export-panel-title', '')
+    title.textContent = t('batch.title')
+    panel.appendChild(title)
+
+    // 工具行：全选/全不选 + 已选计数。
+    const toolbar = document.createElement('div')
+    toolbar.setAttribute('data-dsh-conv-export-panel-toolbar', '')
+    const allBtn = document.createElement('button')
+    allBtn.type = 'button'
+    allBtn.textContent = t('panel.selectAll')
+    const noneBtn = document.createElement('button')
+    noneBtn.type = 'button'
+    noneBtn.textContent = t('panel.selectNone')
+    const count = document.createElement('span')
+    count.setAttribute('data-dsh-conv-export-panel-count', '')
+    toolbar.append(allBtn, noneBtn, count)
+    panel.appendChild(toolbar)
+
+    // 筛选框：按标题/ID 实时过滤（纯客户端，不分发服务端）。
+    const search = document.createElement('input')
+    search.type = 'search'
+    search.setAttribute('data-dsh-conv-export-batch-search', '')
+    search.placeholder = t('batch.search')
+    search.addEventListener('input', () => {
+      keyword = search.value
+      renderList()
+    })
+    panel.appendChild(search)
+
+    // 会话列表：label 包裹 checkbox，点整行即切换。
+    const list = document.createElement('div')
+    list.setAttribute('data-dsh-conv-export-panel-list', '')
+    panel.appendChild(list)
+
+    // 底部按钮：取消 + 导出。
+    const footer = document.createElement('div')
+    footer.setAttribute('data-dsh-conv-export-panel-footer', '')
+    const cancelBtn = document.createElement('button')
+    cancelBtn.type = 'button'
+    cancelBtn.setAttribute('data-dsh-conv-export-panel-secondary', '')
+    cancelBtn.textContent = t('panel.cancel')
+    const confirmBtn = document.createElement('button')
+    confirmBtn.type = 'button'
+    confirmBtn.setAttribute('data-dsh-conv-export-panel-primary', '')
+    footer.append(cancelBtn, confirmBtn)
+    panel.appendChild(footer)
+
+    /** 当前筛选结果（标题或 ID 子串匹配，大小写不敏感）。 */
+    const filtered = (): readonly BatchSession[] => {
+      const kw = keyword.trim().toLowerCase()
+      if (!kw) return sessions
+      return sessions.filter(
+        (s) => (s.title ?? '').toLowerCase().includes(kw) || s.id.toLowerCase().includes(kw),
+      )
+    }
+
+    /** 列表状态渲染：加载中 / 加载失败（重试）/ 空 / 无匹配 / 会话行。 */
+    const renderList = (): void => {
+      list.textContent = ''
+      if (loading) {
+        list.appendChild(note(t('batch.loading')))
+        return
+      }
+      if (loadError) {
+        const retry = document.createElement('button')
+        retry.type = 'button'
+        retry.textContent = t('batch.retry')
+        retry.addEventListener('click', () => { load() })
+        const row = note(t('batch.loadFail'))
+        row.appendChild(retry)
+        list.appendChild(row)
+        return
+      }
+      if (sessions.length === 0) {
+        list.appendChild(note(t('batch.empty')))
+        return
+      }
+      const rows = filtered()
+      if (rows.length === 0) {
+        list.appendChild(note(t('batch.noMatch')))
+        return
+      }
+      for (const session of rows) {
+        const row = document.createElement('label')
+        row.setAttribute('data-dsh-conv-export-panel-item', '')
+        const box = document.createElement('input')
+        box.type = 'checkbox'
+        box.checked = checked.has(session.id)
+        box.addEventListener('change', () => {
+          if (box.checked) checked.add(session.id)
+          else checked.delete(session.id)
+          sync()
+        })
+        const name = document.createElement('span')
+        name.setAttribute('data-dsh-conv-export-batch-name', '')
+        const display = session.title ?? session.id
+        name.textContent = display
+        // 悬停提示展示完整标题（列表内单行截断的补充）。
+        name.title = display
+        const time = document.createElement('span')
+        time.setAttribute('data-dsh-conv-export-batch-time', '')
+        time.textContent = new Date(session.createdAt).toLocaleString(undefined, { hour12: false })
+        row.append(box, name, time)
+        list.appendChild(row)
+      }
+    }
+
+    /** 同步计数与导出按钮（打包进行中不打扰进度文案）。 */
+    const sync = (): void => {
+      count.textContent = `${t('panel.selected')} ${checked.size}/${sessions.length}`
+      if (this.batchRun === null) {
+        confirmBtn.disabled = checked.size === 0
+        confirmBtn.textContent = checked.size === 0
+          ? t('batch.minSelect')
+          : `${t('panel.export')} (${checked.size})`
+      }
+    }
+    sync()
+
+    /** 拉取会话列表（打开时与失败重试共用；面板关闭时中止在途请求）。 */
+    const load = (): void => {
+      loading = true
+      loadError = false
+      renderList()
+      const abort = new AbortController()
+      this.batchListAbort = abort
+      fetchBatchSessions(abort.signal)
+        .then((rows) => {
+          if (abort.signal.aborted || this.panel !== backdrop) return
+          sessions = rows
+          loading = false
+          renderList()
+          sync()
+        })
+        .catch((error: unknown) => {
+          if (abort.signal.aborted || this.panel !== backdrop) return
+          if (error instanceof DOMException && error.name === 'AbortError') return
+          loading = false
+          loadError = true
+          renderList()
+        })
+        .finally(() => {
+          if (this.batchListAbort === abort) this.batchListAbort = null
+        })
+    }
+
+    /** 执行批量导出：POST /conv-export/batch → ZIP 下载；中止信号贯穿请求。 */
+    const runBatch = (): void => {
+      const ids = sessions.filter((s) => checked.has(s.id)).map((s) => s.id)
+      if (ids.length === 0) return
+      const abort = new AbortController()
+      this.batchRun = abort
+      // 保持可点击：进行中再次点击确认即中止（与回合面板同一交互纪律）。
+      confirmBtn.disabled = false
+      confirmBtn.textContent = t('batch.packing')
+      runBatchExport(ids, abort.signal)
+        .then(() => {
+          this.toast(t('batch.done'))
+          this.closePanel()
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            this.toast(t('batch.cancelled'))
+          } else {
+            this.toast(error instanceof Error && error.message.length > 0 ? error.message : t('batch.fail'))
+          }
+        })
+        .finally(() => {
+          if (this.batchRun === abort) this.batchRun = null
+          sync()
+        })
+    }
+
+    allBtn.addEventListener('click', () => {
+      // 全选作用于当前筛选结果并与已有选择取并集（筛选时即「选中全部匹配项」，
+      // 不匹配的已选会话保持选中不被清除）。
+      for (const session of filtered()) checked.add(session.id)
+      renderList()
+      sync()
+    })
+    noneBtn.addEventListener('click', () => {
+      checked.clear()
+      renderList()
+      sync()
+    })
+    cancelBtn.addEventListener('click', () => {
+      // 打包进行中：取消即中止；空闲：直接关面板。
+      if (this.batchRun !== null) {
+        this.batchRun.abort()
+        return
+      }
+      this.closePanel()
+    })
+    confirmBtn.addEventListener('click', () => {
+      // 打包进行中：再次点击确认 = 中止（进度文案所在按钮即取消入口）。
+      if (this.batchRun !== null) {
+        this.batchRun.abort()
+        return
+      }
+      runBatch()
+    })
+
+    backdrop.appendChild(panel)
+    document.body.appendChild(backdrop)
+    this.panel = backdrop
+    load()
   }
 
   /**

@@ -12,10 +12,14 @@ export declare function previewOf(message: ExtractedMessage): string;
  */
 declare class ExportController {
     private menu;
-    /** 选择面板（backdrop 元素）；null = 未打开。 */
+    /** 选择面板（backdrop 元素；回合面板与批量面板共用此槽位）；null = 未打开。 */
     private panel;
     private installed;
     private running;
+    /** 批量面板：会话列表拉取的取消控制器（面板关闭时中止）。 */
+    private batchListAbort;
+    /** 批量面板：打包请求的取消控制器（非 null 期间面板不可关闭）。 */
+    private batchRun;
     /** Install the menu DOM and document listeners. Idempotent. */
     install(): void;
     /** Remove every installed effect. Idempotent. */
@@ -52,7 +56,7 @@ declare class ExportController {
      * @param progress - 进度宿主（可缺省）。
      */
     private execute;
-    /** 关闭选择面板（幂等）。 */
+    /** 关闭选择/批量面板（幂等）：中止批量面板的在途请求后移除 DOM。 */
     private closePanel;
     /**
      * 打开回合选择面板：逐回合勾选（默认全选）+ 格式挑选，确认后仅导出
@@ -60,6 +64,14 @@ declare class ExportController {
      * 面板随导出结束（含取消）自动关闭。
      */
     private openSelection;
+    /**
+     * 打开批量导出面板（能力吸收自 dsh-companion）：拉取历史会话列表，
+     * 按标题/ID 实时筛选、逐个勾选、全选/全不选（作用于当前筛选结果并与
+     * 已有选择取并集）、已选计数；确认后将所选会话各生成一份 Markdown
+     * 打包为 ZIP 下载（单次最多 100 个会话，自动去重，读取失败自动跳过）。
+     * 打包进行中确认按钮显示「正在打包…」，再次点击或「取消」中止。
+     */
+    private openBatch;
     /**
      * Show a transient toast (bottom-center) for export failures.
      * @param text - the message to show.

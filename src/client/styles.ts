@@ -1,8 +1,8 @@
 /**
  * Global stylesheet adoption: the export dropdown chrome, the header action
- * button, the turn-selection panel, and the failure toast. Injected once
- * into document.head with a stable id so repeated plugin loads never
- * double-inject.
+ * button, the turn-selection panel, the batch session panel, and the failure
+ * toast. Injected once into document.head with a stable id so repeated
+ * plugin loads never double-inject.
  */
 
 /** Stable id of the injected <style> element. */
@@ -336,6 +336,72 @@ const STYLE_TEXT = `
   [data-dsh-conv-export-panel] {
     animation: none;
   }
+}
+
+/* ---- batch session panel (shares panel chrome; adds search + note rows + session rows) ---- */
+[data-dsh-conv-export-batch-search] {
+  background: transparent;
+  border: 1px solid var(--dsw-alias-line-border, rgba(127, 127, 127, .24));
+  border-radius: 10px;
+  color: var(--dsw-alias-label-primary, inherit);
+  font: inherit;
+  font-size: 13px;
+  margin: 10px 20px 0;
+  padding: 7px 12px;
+}
+[data-dsh-conv-export-batch-search]:focus {
+  outline: 2px solid rgba(59, 130, 246, .45);
+  outline-offset: 1px;
+}
+/* 列表提示行：加载中 / 加载失败（含重试按钮）/ 空 / 无匹配。 */
+[data-dsh-conv-export-panel-note] {
+  color: var(--dsw-alias-label-tertiary, #6b7280);
+  font-size: 13px;
+  padding: 20px 10px;
+  text-align: center;
+}
+[data-dsh-conv-export-panel-note] button {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--dsw-alias-line-border, rgba(127, 127, 127, .24));
+  border-radius: 999px;
+  color: var(--dsw-alias-label-secondary, inherit);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 8px;
+  padding: 4px 12px;
+  transition: background .12s ease;
+}
+[data-dsh-conv-export-panel-note] button:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .12));
+}
+/* 会话行：标题（单行截断）+ 创建时间（右侧固定）。 */
+[data-dsh-conv-export-batch-name] {
+  color: var(--dsw-alias-label-secondary, inherit);
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.55;
+  min-width: 0;
+  overflow: hidden;
+  padding-top: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-dsh-conv-export-panel-item]:has(input:checked) [data-dsh-conv-export-batch-name] {
+  color: var(--dsw-alias-label-primary, inherit);
+}
+[data-dsh-conv-export-panel-item]:not(:has(input:checked)) [data-dsh-conv-export-batch-name],
+[data-dsh-conv-export-panel-item]:not(:has(input:checked)) [data-dsh-conv-export-batch-time] {
+  opacity: .5;
+}
+[data-dsh-conv-export-batch-time] {
+  color: var(--dsw-alias-label-tertiary, #6b7280);
+  flex: none;
+  font-size: 11px;
+  padding-top: 4px;
+  white-space: nowrap;
 }
 
 /* ---- failure toast ---- */

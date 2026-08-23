@@ -2,7 +2,7 @@
   "name": "@dsh-external/dsh-conv-export",
   "version": "0.1.0",
   "type": "module",
-  "description": "dsh-conv-export（对话导出）— export the current DeepSeek Harness conversation as Markdown, PDF, or a long PNG image.",
+  "description": "dsh-conv-export（对话导出）— export the current DeepSeek Harness conversation as Markdown, PDF, or a long PNG image; batch-export historical sessions as a Markdown ZIP.",
   "license": "MIT",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -38,10 +38,11 @@
     "lib/**/*.d.ts",
     "src",
     "cordis.patch.yml",
+    "manifest.json",
     "dsh.plugin.json",
     "LICENSE",
     "README.md",
-    "README.zh.md"
+    "README.en.md"
   ],
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.dts.json && node -e \"require('fs').writeFileSync('lib/client.d.ts',\\\"export * from './client/index.js'\\\\n\\\")\"",

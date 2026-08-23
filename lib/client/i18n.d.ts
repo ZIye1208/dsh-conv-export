@@ -13,6 +13,7 @@ declare const zh: {
     'menu.pdf': string;
     'menu.image': string;
     'menu.select': string;
+    'menu.batch': string;
     'role.user': string;
     'role.assistant': string;
     'toast.imageFail': string;
@@ -25,6 +26,19 @@ declare const zh: {
     'panel.export': string;
     'panel.cancel': string;
     'panel.empty': string;
+    'batch.title': string;
+    'batch.search': string;
+    'batch.minSelect': string;
+    'batch.loading': string;
+    'batch.loadFail': string;
+    'batch.retry': string;
+    'batch.empty': string;
+    'batch.noMatch': string;
+    'batch.packing': string;
+    'batch.done': string;
+    'batch.fail': string;
+    'batch.cancelled': string;
+    'batch.unreachable': string;
 };
 /** Dictionary key union. */
 export type ExportKey = keyof typeof zh;

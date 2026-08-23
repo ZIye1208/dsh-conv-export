@@ -6,12 +6,13 @@
 
 English | [中文](README.md)
 
-Export the current DeepSeek Harness conversation as **Markdown**, **PDF** (downloaded directly — no print dialog), or a **long PNG image** — one click in the session header, zero core changes.
+Export the current DeepSeek Harness conversation as **Markdown**, **PDF** (downloaded directly — no print dialog), or a **long PNG image**, and **batch-export** multiple historical sessions as a Markdown ZIP — one click in the session header, zero core changes.
 
 ## Problems it solves
 
 - **Conversations evaporate**: long sessions hold decisions, code, and error trails, but the harness has no built-in way to take them out. This plugin turns the rendered transcript into portable artifacts.
 - **One format never fits**: sharing with a teammate wants Markdown; archiving for compliance wants PDF; pasting into chat wants an image. All three ship in one menu.
+- **One artifact often isn't enough either**: handoffs and archives frequently need several historical sessions in one go. Batch export renders each as its own Markdown file and packs them into a single ZIP.
 - **Exports must match what you see**: extraction runs at click time over the rendered DOM (including paged-in history), so the artifact is exactly the transcript on screen — code fences, tables, and emphasis preserved.
 
 ## Features
@@ -22,6 +23,7 @@ Export the current DeepSeek Harness conversation as **Markdown**, **PDF** (downl
   - **PDF (download)** — tiled rasterization sliced into A4-proportioned pages (page boundaries align with tile boundaries, page count unbounded, peak memory bounded to one tile), downloaded as a self-contained multi-page PDF. No print window, no dialog: the app tab never freezes.
   - **Long image (PNG)** — tiled rasterization (`foreignObject` windows via `translateY`, tile height = A4 page height × 2) plus a streaming PNG encoder (tile-level adaptive row filtering → incremental `CompressionStream('deflate')` compression), images inlined as data URLs. The PNG spec has no height cap; the sane ceiling is ~176 A4 pages (200,000 CSS px). Environments without `CompressionStream` fall back to the legacy single-canvas truncation path (16000px).
   - **Select turns…** — opens a turn-selection panel: check turns individually (role + content preview, all checked by default), select all/none with a live count, pick the export format, and confirm to export only the checked turns (e.g. drop failed attempts or off-topic tangents). During export the confirm button shows tile progress; clicking it again or Cancel aborts.
+  - **Batch export sessions…** — opens a session-selection panel: real-time filtering by title / session ID, per-session checkboxes, select all/none (applies to the current filter result and unions with the existing selection), and a live selected count. Confirm and each selected session is rendered as its own Markdown, packed into a single ZIP download (up to 100 sessions per run, auto-deduplicated; unreadable sessions are skipped without blocking the rest). While packing, the confirm button shows "Packing…" and clicking it again or Cancel aborts; Escape / backdrop clicks don't close the panel mid-pack.
 - **Sensible file names** from the session title (sanitized, capped).
 - Follows the harness `--dsw-alias-*` design tokens; menu labels switch zh/en by document language.
 - Menu hygiene: Escape or outside-click closes; rasterizing menu items show live `done/total` progress and re-clicking the same item cancels the in-flight export; a toast reports long-image raster failures. The selection panel closes via Escape or backdrop click when idle, and via the Cancel button mid-export.
@@ -45,9 +47,11 @@ The package declares `dsh.bundle.patch` (mounts the host registration row) and `
 
 Open any conversation, click the download icon in the session header, pick a format. All three formats download directly — no dialogs, the app tab stays responsive.
 
+**Batch export**: pick "Batch export sessions…" from the menu, filter and check the target sessions in the panel, confirm, and a ZIP downloads (one `.md` per session, each with a metadata header — session ID / creation time / turn count — and timestamps).
+
 ## How it works
 
-- The host half is an empty cordis registration shell; all behavior lives in the browser bundle (`lib/client.js`), mounted by the stock loader with zero core changes.
+- Single-session paths (Markdown / PDF / long image / turn selection) live entirely in the browser bundle (`lib/client.js`), mounted by the stock loader with zero core changes. Batch export needs cross-session reads — the browser cannot reach transcripts beyond the current conversation — so the host half (`lib/index.js`) gains a **read-only service layer**: it mounts the `/conv-export` prefix routes (`GET /sessions`, `POST /batch`) via `ctx.webServer` and reads sessions via `ctx.sessionQuery`, packing them into a Markdown ZIP (zero-dependency packer, STORE method). No storage domain, no outbound network requests, no state; the batch selection panel (filter / checkboxes / select-all / count / cancel) stays plain DOM and shares the turn panel's skeleton and design tokens.
 - Extraction walks `[data-conversation-scroll]` in document order, pairing user rows (`[class*="_userRow"]` bubbles) with assistant markdown containers (`[class*="_markdown_"]`) — the stock renderer's stable class contracts.
 - The long-image/PDF paths use tiled rasterization: an offscreen stage stays mounted as the clone source, and each tile serializes a clean clone (explicit XHTML namespace, no offscreen offsets, `translateY(−offset)` window displacement) into an SVG `foreignObject`, validates it with `DOMParser`, then rasterizes onto an independent 2x canvas (tile height = A4 page height × 2). External images are fetched and inlined first; unreachable ones are dropped rather than tainting the canvas. PNG rows stream through a tile-level adaptive filter into `CompressionStream('deflate')` incremental compression — exactly the zlib stream the PNG spec requires.
 
@@ -56,6 +60,7 @@ Open any conversation, click the download icon in the session header, pick a for
 - The long-image and PDF paths rasterize through SVG `foreignObject` (all evergreen browsers paint it); exotic embedded content may flatten.
 - PDF pages are raster images (text is not selectable); for selectable text use the Markdown export.
 - Export scope is the active conversation column only — sidebar titles and settings pages are out of scope.
+- Batch export is Markdown-only (PDF / long images require per-session client-side rasterization and can't join a ZIP); batch entries are derived from session logs (raw text + metadata header), not reverse-serialized from rendered HTML, so rich-text formatting follows the log source.
 
 ## Troubleshooting
 
