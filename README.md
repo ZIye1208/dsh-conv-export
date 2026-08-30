@@ -36,7 +36,7 @@
 
 ```sh
 dsh plugin add beijingwahw/dsh-conv-export --profile web
-dsh web   # 重启服务以加载插件
+dsh web
 ```
 
 > 常用进阶命令：升级 `dsh plugin upgrade dsh-conv-export --profile web`；卸载 `dsh plugin remove dsh-conv-export --profile web`；本地路径安装 `dsh plugin add ./dsh-conv-export --profile web`。
