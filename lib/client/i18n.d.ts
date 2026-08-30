@@ -19,6 +19,8 @@ declare const zh: {
     'toast.imageFail': string;
     'toast.cancelled': string;
     'panel.title': string;
+    'panel.caption': string;
+    'panel.close': string;
     'panel.selectAll': string;
     'panel.selectNone': string;
     'panel.selected': string;
@@ -27,6 +29,7 @@ declare const zh: {
     'panel.cancel': string;
     'panel.empty': string;
     'batch.title': string;
+    'batch.caption': string;
     'batch.search': string;
     'batch.minSelect': string;
     'batch.loading': string;

@@ -38,6 +38,39 @@ type ExportKind = 'markdown' | 'pdf' | 'image'
 /** Menu entry ids — 'select' opens the turn panel, 'batch' the session panel. */
 type MenuKind = ExportKind | 'select' | 'batch'
 
+/**
+ * 线性图标集（16px viewBox，stroke currentColor 随文字色）。静态常量字符串
+ * 经 innerHTML 注入，不含任何用户输入。
+ */
+const ICONS = {
+  markdown:
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.25" y="2.25" width="9.5" height="11.5" rx="1.9"/><path d="M5.8 5.9h4.4M5.8 8.2h4.4M5.8 10.5h2.8"/></svg>',
+  pdf:
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2.5h5.5L13 6v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13V4a1.5 1.5 0 0 1 1-1.5z"/><path d="M9.3 2.8V6h3.4"/></svg>',
+  image:
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="3.25" width="10.5" height="9.5" rx="1.9"/><circle cx="6.1" cy="6.7" r="1.05"/><path d="M4.7 12l2.8-2.9 1.9 2 1.3-1.3 2.4 2.3"/></svg>',
+  select:
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.8 4.7l1.4 1.4 2.6-2.9"/><path d="M8.7 4.6h4.5"/><path d="M2.8 10.7l1.4 1.4 2.6-2.9"/><path d="M8.7 10.6h4.5"/></svg>',
+  batch:
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.6l5.3 2.7L8 8 2.7 5.3 8 2.6z"/><path d="M3 8.5l5 2.6 5-2.6"/><path d="M3 11.3l5 2.6 5-2.6"/></svg>',
+  close:
+    '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.6 4.6l6.8 6.8M11.4 4.6l-6.8 6.8"/></svg>',
+  chevron:
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.2 3.6L10.6 8l-4.4 4.4"/></svg>',
+} as const
+
+/**
+ * 写入按钮标签：按钮内含 [data-cx-label] 容器时写入之，保留图标/标签/
+ * spinner 等结构（直接写 textContent 会清空它们）。
+ * @param btn - 目标按钮。
+ * @param text - 标签文案。
+ */
+function setButtonLabel(btn: HTMLElement, text: string): void {
+  const host = btn.querySelector<HTMLElement>('[data-cx-label]')
+  if (host !== null) host.textContent = text
+  else btn.textContent = text
+}
+
 /** 进行中的光栅导出：类别 + 取消控制器。 */
 interface RunningExport {
   readonly kind: ExportKind
@@ -60,10 +93,19 @@ export function previewOf(message: ExtractedMessage): string {
   return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
 }
 
-/** 面板列表内的提示行（加载中 / 加载失败 / 空 / 无匹配）。 */
-function note(text: string): HTMLDivElement {
+/** 面板列表内的提示行类型：加载中 / 加载失败 / 空 / 无匹配。 */
+type NoteKind = 'loading' | 'error' | 'empty'
+
+/**
+ * 面板列表内的提示行（带状态图标：loading = spinner、error = 琥珀、
+ * empty = 收件匣），供 CSS 按类型渲染图标。
+ * @param text - 提示文案。
+ * @param kind - 状态类型。
+ */
+function note(text: string, kind: NoteKind): HTMLDivElement {
   const el = document.createElement('div')
   el.setAttribute('data-dsh-conv-export-panel-note', '')
+  el.setAttribute('data-cx-kind', kind)
   el.textContent = text
   return el
 }
@@ -143,12 +185,19 @@ class ExportController {
     menu.hidden = true
     menu.setAttribute('role', 'menu')
 
-    const entries: Array<{ kind: MenuKind; label: string }> = [
-      { kind: 'markdown', label: t('menu.markdown') },
-      { kind: 'pdf', label: t('menu.pdf') },
-      { kind: 'image', label: t('menu.image') },
-      { kind: 'select', label: t('menu.select') },
-      { kind: 'batch', label: t('menu.batch') },
+    /** 菜单项视觉规格：图标 + 文案 + 右侧标注（格式标签或子面板箭头）。 */
+    const entries: Array<{
+      kind: MenuKind
+      label: string
+      icon: string
+      tag?: string
+      chevron?: boolean
+    }> = [
+      { kind: 'markdown', label: t('menu.markdown'), icon: ICONS.markdown, tag: '.md' },
+      { kind: 'pdf', label: t('menu.pdf'), icon: ICONS.pdf, tag: 'A4' },
+      { kind: 'image', label: t('menu.image'), icon: ICONS.image, tag: 'PNG' },
+      { kind: 'select', label: t('menu.select'), icon: ICONS.select, chevron: true },
+      { kind: 'batch', label: t('menu.batch'), icon: ICONS.batch, chevron: true },
     ]
     for (const entry of entries) {
       // 分隔线：区分「快捷导出」与「选择 / 批量导出」。
@@ -160,7 +209,25 @@ class ExportController {
       btn.type = 'button'
       btn.setAttribute('role', 'menuitem')
       btn.setAttribute('data-export-kind', entry.kind)
-      btn.textContent = entry.label
+      const ico = document.createElement('span')
+      ico.setAttribute('data-cx-ico', '')
+      ico.innerHTML = entry.icon
+      const label = document.createElement('span')
+      label.setAttribute('data-cx-label', '')
+      label.textContent = entry.label
+      btn.append(ico, label)
+      if (entry.tag !== undefined) {
+        const tag = document.createElement('span')
+        tag.setAttribute('data-cx-tag', '')
+        tag.textContent = entry.tag
+        btn.appendChild(tag)
+      }
+      if (entry.chevron === true) {
+        const chevron = document.createElement('span')
+        chevron.setAttribute('data-cx-chevron', '')
+        chevron.innerHTML = ICONS.chevron
+        btn.appendChild(chevron)
+      }
       btn.addEventListener('click', () => {
         if (entry.kind === 'select') {
           this.openSelection()
@@ -258,8 +325,11 @@ class ExportController {
     this.running = { kind, abort }
     const onProgress = (done: number, total: number): void => {
       if (progress !== undefined && progress.el !== null) {
-        progress.el.textContent = `${progress.baseLabel} ${done}/${total}`
+        setButtonLabel(progress.el, `${progress.baseLabel} ${done}/${total}`)
       }
+    }
+    if (progress !== undefined && progress.el !== null) {
+      progress.el.setAttribute('data-cx-state', 'running')
     }
     try {
       if (kind === 'markdown') {
@@ -278,7 +348,10 @@ class ExportController {
       }
     } finally {
       this.running = null
-      if (progress !== undefined && progress.el !== null) progress.el.textContent = progress.baseLabel
+      if (progress !== undefined && progress.el !== null) {
+        progress.el.removeAttribute('data-cx-state')
+        setButtonLabel(progress.el, progress.baseLabel)
+      }
     }
   }
 
@@ -318,29 +391,50 @@ class ExportController {
     panel.setAttribute('aria-modal', 'true')
     panel.setAttribute('aria-label', t('panel.title'))
 
-    // 标题。
+    // 头部：图标芯片 + 标题/副题 + 关闭按钮。
     const title = document.createElement('div')
     title.setAttribute('data-dsh-conv-export-panel-title', '')
-    title.textContent = t('panel.title')
+    const titleIco = document.createElement('span')
+    titleIco.setAttribute('data-cx-ico', '')
+    titleIco.innerHTML = ICONS.select
+    const head = document.createElement('span')
+    head.setAttribute('data-cx-head', '')
+    const titleText = document.createElement('span')
+    titleText.setAttribute('data-cx-title', '')
+    titleText.textContent = t('panel.title')
+    const caption = document.createElement('span')
+    caption.setAttribute('data-cx-caption', '')
+    caption.textContent = t('panel.caption')
+    head.append(titleText, caption)
+    const closeBtn = document.createElement('button')
+    closeBtn.type = 'button'
+    closeBtn.setAttribute('data-cx-close', '')
+    closeBtn.setAttribute('aria-label', t('panel.close'))
+    closeBtn.innerHTML = ICONS.close
+    title.append(titleIco, head, closeBtn)
     panel.appendChild(title)
 
-    // 工具行：全选/全不选 + 已选计数。
+    // 工具行：全选/全不选分段控件 + 已选计数。
     const toolbar = document.createElement('div')
     toolbar.setAttribute('data-dsh-conv-export-panel-toolbar', '')
+    const seg = document.createElement('div')
+    seg.setAttribute('data-cx-seg', '')
     const allBtn = document.createElement('button')
     allBtn.type = 'button'
     allBtn.textContent = t('panel.selectAll')
     const noneBtn = document.createElement('button')
     noneBtn.type = 'button'
     noneBtn.textContent = t('panel.selectNone')
+    seg.append(allBtn, noneBtn)
     const count = document.createElement('span')
     count.setAttribute('data-dsh-conv-export-panel-count', '')
-    toolbar.append(allBtn, noneBtn, count)
+    toolbar.append(seg, count)
     panel.appendChild(toolbar)
 
-    // 回合列表：label 包裹 checkbox，点整行即切换。
+    // 回合列表：label 包裹 checkbox，点整行即切换；入场做 capped 交错。
     const list = document.createElement('div')
     list.setAttribute('data-dsh-conv-export-panel-list', '')
+    list.setAttribute('data-cx-stagger', '')
     const boxes: HTMLInputElement[] = []
     messages.forEach((message, i) => {
       const row = document.createElement('label')
@@ -367,13 +461,14 @@ class ExportController {
     })
     panel.appendChild(list)
 
-    // 格式行：分段单选（aria-pressed 镜像激活态）。
+    // 格式行：内嵌分段单选（aria-pressed 镜像激活态）。
     const formatRow = document.createElement('div')
     formatRow.setAttribute('data-dsh-conv-export-panel-format', '')
     const formatLabel = document.createElement('span')
     formatLabel.setAttribute('data-dsh-conv-export-panel-format-label', '')
     formatLabel.textContent = t('panel.format')
-    formatRow.appendChild(formatLabel)
+    const formatGroup = document.createElement('div')
+    formatGroup.setAttribute('data-cx-group', '')
     const formatBtns = new Map<ExportKind, HTMLButtonElement>()
     for (const kind of ['markdown', 'pdf', 'image'] as const) {
       const btn = document.createElement('button')
@@ -386,11 +481,12 @@ class ExportController {
         for (const [k, b] of formatBtns) b.setAttribute('aria-pressed', String(k === format))
       })
       formatBtns.set(kind, btn)
-      formatRow.appendChild(btn)
+      formatGroup.appendChild(btn)
     }
+    formatRow.append(formatLabel, formatGroup)
     panel.appendChild(formatRow)
 
-    // 底部按钮：取消 + 导出。
+    // 底部按钮：取消 + 导出（标签写入 [data-cx-label]，运行态由 CSS 呈现）。
     const footer = document.createElement('div')
     footer.setAttribute('data-dsh-conv-export-panel-footer', '')
     const cancelBtn = document.createElement('button')
@@ -400,6 +496,9 @@ class ExportController {
     const confirmBtn = document.createElement('button')
     confirmBtn.type = 'button'
     confirmBtn.setAttribute('data-dsh-conv-export-panel-primary', '')
+    const confirmLabel = document.createElement('span')
+    confirmLabel.setAttribute('data-cx-label', '')
+    confirmBtn.appendChild(confirmLabel)
     footer.append(cancelBtn, confirmBtn)
     panel.appendChild(footer)
 
@@ -409,7 +508,7 @@ class ExportController {
       count.textContent = `${t('panel.selected')} ${n}/${messages.length}`
       if (this.running === null) {
         confirmBtn.disabled = n === 0
-        confirmBtn.textContent = n === 0 ? t('panel.empty') : `${t('panel.export')} (${n})`
+        setButtonLabel(confirmBtn, n === 0 ? t('panel.empty') : `${t('panel.export')} (${n})`)
       }
     }
     sync()
@@ -424,14 +523,16 @@ class ExportController {
       for (const box of boxes) box.checked = false
       sync()
     })
-    cancelBtn.addEventListener('click', () => {
-      // 导出进行中：取消即中止；空闲：直接关面板。
+    /** 请求关闭：导出进行中先中止，空闲则直接关面板（取消/关闭共用）。 */
+    const requestClose = (): void => {
       if (this.running !== null) {
         this.running.abort.abort()
         return
       }
       this.closePanel()
-    })
+    }
+    cancelBtn.addEventListener('click', requestClose)
+    closeBtn.addEventListener('click', requestClose)
     confirmBtn.addEventListener('click', () => {
       // 导出进行中：再次点击确认 = 中止（进度文案所在按钮即取消入口）。
       if (this.running !== null) {
@@ -482,24 +583,44 @@ class ExportController {
     panel.setAttribute('aria-modal', 'true')
     panel.setAttribute('aria-label', t('batch.title'))
 
-    // 标题。
+    // 头部：图标芯片 + 标题/副题 + 关闭按钮。
     const title = document.createElement('div')
     title.setAttribute('data-dsh-conv-export-panel-title', '')
-    title.textContent = t('batch.title')
+    const titleIco = document.createElement('span')
+    titleIco.setAttribute('data-cx-ico', '')
+    titleIco.innerHTML = ICONS.batch
+    const head = document.createElement('span')
+    head.setAttribute('data-cx-head', '')
+    const titleText = document.createElement('span')
+    titleText.setAttribute('data-cx-title', '')
+    titleText.textContent = t('batch.title')
+    const caption = document.createElement('span')
+    caption.setAttribute('data-cx-caption', '')
+    caption.textContent = t('batch.caption')
+    head.append(titleText, caption)
+    const closeBtn = document.createElement('button')
+    closeBtn.type = 'button'
+    closeBtn.setAttribute('data-cx-close', '')
+    closeBtn.setAttribute('aria-label', t('panel.close'))
+    closeBtn.innerHTML = ICONS.close
+    title.append(titleIco, head, closeBtn)
     panel.appendChild(title)
 
-    // 工具行：全选/全不选 + 已选计数。
+    // 工具行：全选/全不选分段控件 + 已选计数。
     const toolbar = document.createElement('div')
     toolbar.setAttribute('data-dsh-conv-export-panel-toolbar', '')
+    const seg = document.createElement('div')
+    seg.setAttribute('data-cx-seg', '')
     const allBtn = document.createElement('button')
     allBtn.type = 'button'
     allBtn.textContent = t('panel.selectAll')
     const noneBtn = document.createElement('button')
     noneBtn.type = 'button'
     noneBtn.textContent = t('panel.selectNone')
+    seg.append(allBtn, noneBtn)
     const count = document.createElement('span')
     count.setAttribute('data-dsh-conv-export-panel-count', '')
-    toolbar.append(allBtn, noneBtn, count)
+    toolbar.append(seg, count)
     panel.appendChild(toolbar)
 
     // 筛选框：按标题/ID 实时过滤（纯客户端，不分发服务端）。
@@ -518,7 +639,7 @@ class ExportController {
     list.setAttribute('data-dsh-conv-export-panel-list', '')
     panel.appendChild(list)
 
-    // 底部按钮：取消 + 导出。
+    // 底部按钮：取消 + 导出（标签写入 [data-cx-label]，打包态由 CSS 呈现）。
     const footer = document.createElement('div')
     footer.setAttribute('data-dsh-conv-export-panel-footer', '')
     const cancelBtn = document.createElement('button')
@@ -528,6 +649,9 @@ class ExportController {
     const confirmBtn = document.createElement('button')
     confirmBtn.type = 'button'
     confirmBtn.setAttribute('data-dsh-conv-export-panel-primary', '')
+    const confirmLabel = document.createElement('span')
+    confirmLabel.setAttribute('data-cx-label', '')
+    confirmBtn.appendChild(confirmLabel)
     footer.append(cancelBtn, confirmBtn)
     panel.appendChild(footer)
 
@@ -544,7 +668,7 @@ class ExportController {
     const renderList = (): void => {
       list.textContent = ''
       if (loading) {
-        list.appendChild(note(t('batch.loading')))
+        list.appendChild(note(t('batch.loading'), 'loading'))
         return
       }
       if (loadError) {
@@ -552,18 +676,18 @@ class ExportController {
         retry.type = 'button'
         retry.textContent = t('batch.retry')
         retry.addEventListener('click', () => { load() })
-        const row = note(t('batch.loadFail'))
+        const row = note(t('batch.loadFail'), 'error')
         row.appendChild(retry)
         list.appendChild(row)
         return
       }
       if (sessions.length === 0) {
-        list.appendChild(note(t('batch.empty')))
+        list.appendChild(note(t('batch.empty'), 'empty'))
         return
       }
       const rows = filtered()
       if (rows.length === 0) {
-        list.appendChild(note(t('batch.noMatch')))
+        list.appendChild(note(t('batch.noMatch'), 'empty'))
         return
       }
       for (const session of rows) {
@@ -596,9 +720,9 @@ class ExportController {
       count.textContent = `${t('panel.selected')} ${checked.size}/${sessions.length}`
       if (this.batchRun === null) {
         confirmBtn.disabled = checked.size === 0
-        confirmBtn.textContent = checked.size === 0
+        setButtonLabel(confirmBtn, checked.size === 0
           ? t('batch.minSelect')
-          : `${t('panel.export')} (${checked.size})`
+          : `${t('panel.export')} (${checked.size})`)
       }
     }
     sync()
@@ -638,7 +762,8 @@ class ExportController {
       this.batchRun = abort
       // 保持可点击：进行中再次点击确认即中止（与回合面板同一交互纪律）。
       confirmBtn.disabled = false
-      confirmBtn.textContent = t('batch.packing')
+      confirmBtn.setAttribute('data-cx-state', 'running')
+      setButtonLabel(confirmBtn, t('batch.packing'))
       runBatchExport(ids, abort.signal)
         .then(() => {
           this.toast(t('batch.done'))
@@ -653,6 +778,7 @@ class ExportController {
         })
         .finally(() => {
           if (this.batchRun === abort) this.batchRun = null
+          confirmBtn.removeAttribute('data-cx-state')
           sync()
         })
     }
@@ -669,14 +795,16 @@ class ExportController {
       renderList()
       sync()
     })
-    cancelBtn.addEventListener('click', () => {
-      // 打包进行中：取消即中止；空闲：直接关面板。
+    /** 请求关闭：打包进行中先中止，空闲则直接关面板（取消/关闭共用）。 */
+    const requestClose = (): void => {
       if (this.batchRun !== null) {
         this.batchRun.abort()
         return
       }
       this.closePanel()
-    })
+    }
+    cancelBtn.addEventListener('click', requestClose)
+    closeBtn.addEventListener('click', requestClose)
     confirmBtn.addEventListener('click', () => {
       // 打包进行中：再次点击确认 = 中止（进度文案所在按钮即取消入口）。
       if (this.batchRun !== null) {
