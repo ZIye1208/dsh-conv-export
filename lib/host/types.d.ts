@@ -16,6 +16,17 @@ export interface SessionHeader {
     readonly createdAt: number;
     readonly updatedAt?: number;
 }
+/**
+ * listSessions 的原始返回项：扁平头（dev 桩 / 旧适配层）或真实
+ * DeepSeek Harness 的语料记录 `{ header, live, persisted }`（标题不在
+ * 头里，而在日志的 `session/title` 事件里）。宿主半经
+ * normalizeSessionHeaders 归一化为扁平头后供浏览器消费。
+ */
+export type SessionListRecord = SessionHeader | {
+    readonly header: SessionHeader;
+    readonly live?: boolean;
+    readonly persisted?: boolean;
+};
 /** 会话日志事件（append-only、类型化；载荷保持宽松）。 */
 export interface SessionEvent {
     readonly type: string;
@@ -28,10 +39,15 @@ export interface SessionLogSnapshot {
     readonly session: SessionHeader;
     readonly events: readonly SessionEvent[];
 }
-/** 会话查询引擎（本插件只消费 listSessions / readSession 两个方法）。 */
+/**
+ * 会话查询引擎（本插件只消费 listSessions / readSession，加上可选的
+ * readTitleSnapshots 标题批量折取——真实宿主提供，dev 桩可缺省）。
+ */
 export interface SessionQueryEngine {
-    listSessions(signal?: AbortSignal): Promise<readonly SessionHeader[]>;
+    listSessions(signal?: AbortSignal): Promise<readonly SessionListRecord[]>;
     readSession(sessionId: string, signal?: AbortSignal): Promise<SessionLogSnapshot>;
+    /** 可选：按输入顺序返回逐会话的标题折取结果（PromiseSettled 形状）。 */
+    readTitleSnapshots?(sessionIds: readonly string[], signal?: AbortSignal): Promise<readonly unknown[]>;
 }
 /** Web 路由注册描述符。 */
 export interface WebRoute {
