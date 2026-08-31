@@ -1,9 +1,9 @@
 /**
  * The export controller: owns the header-triggered dropdown menu (plain DOM
  * — no React, so it never couples to the shell's React version) and
- * dispatches the three sinks (Markdown download, PDF download, long PNG).
- * Extraction runs at click time, so the export always reflects the
- * transcript exactly as the reader sees it.
+ * dispatches the five sinks (Markdown download, single-file HTML download,
+ * PDF download, long PNG, clipboard copy). Extraction runs at click time, so
+ * the export always reflects the transcript exactly as the reader sees it.
  *
  * 光栅导出（PDF/PNG）带分片进度：进行中菜单项实时显示「done/total」
  * 计数；再次点击同一菜单项取消进行中的导出（AbortError → 已取消提示）。
@@ -28,12 +28,12 @@
 import { extractMessages, readTitle, resolveScope, safeFileStem } from './extract.ts'
 import type { ExtractedMessage } from './extract.ts'
 import { buildMarkdown } from './markdown.ts'
-import { downloadBlob, exportImage, exportPdf } from './exporters.ts'
+import { copyText, downloadBlob, exportHtml, exportImage, exportPdf } from './exporters.ts'
 import { fetchBatchSessions, runBatchExport, type BatchSession } from './batch.ts'
 import { t } from './i18n.ts'
 
 /** Export sink ids. */
-type ExportKind = 'markdown' | 'pdf' | 'image'
+type ExportKind = 'markdown' | 'html' | 'pdf' | 'image' | 'copy'
 
 /** Menu entry ids — 'select' opens the turn panel, 'batch' the session panel. */
 type MenuKind = ExportKind | 'select' | 'batch'
@@ -47,6 +47,10 @@ const ICONS = {
     '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.25" y="2.25" width="9.5" height="11.5" rx="1.9"/><path d="M5.8 5.9h4.4M5.8 8.2h4.4M5.8 10.5h2.8"/></svg>',
   pdf:
     '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2.5h5.5L13 6v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13V4a1.5 1.5 0 0 1 1-1.5z"/><path d="M9.3 2.8V6h3.4"/></svg>',
+  html:
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2.5h5.5L13 6v7a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13V4a1.5 1.5 0 0 1 1-1.5z"/><path d="M6.2 7.2L4.9 8.5l1.3 1.3M9.8 7.2l1.3 1.3-1.3 1.3M8.5 6.9l-1 3.2"/></svg>',
+  copy:
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="8" rx="1.6"/><path d="M10.75 5.25V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5.25a1.5 1.5 0 0 0 1.5 1.5h1.25"/></svg>',
   image:
     '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="3.25" width="10.5" height="9.5" rx="1.9"/><circle cx="6.1" cy="6.7" r="1.05"/><path d="M4.7 12l2.8-2.9 1.9 2 1.3-1.3 2.4 2.3"/></svg>',
   select:
@@ -194,8 +198,10 @@ class ExportController {
       chevron?: boolean
     }> = [
       { kind: 'markdown', label: t('menu.markdown'), icon: ICONS.markdown, tag: '.md' },
+      { kind: 'html', label: t('menu.html'), icon: ICONS.html, tag: '.html' },
       { kind: 'pdf', label: t('menu.pdf'), icon: ICONS.pdf, tag: 'A4' },
       { kind: 'image', label: t('menu.image'), icon: ICONS.image, tag: 'PNG' },
+      { kind: 'copy', label: t('menu.copy'), icon: ICONS.copy },
       { kind: 'select', label: t('menu.select'), icon: ICONS.select, chevron: true },
       { kind: 'batch', label: t('menu.batch'), icon: ICONS.batch, chevron: true },
     ]
@@ -281,7 +287,11 @@ class ExportController {
 
   /** 菜单基础标签文案（进度显示复用）。 */
   private menuLabel(kind: ExportKind): string {
-    return kind === 'markdown' ? t('menu.markdown') : kind === 'pdf' ? t('menu.pdf') : t('menu.image')
+    if (kind === 'markdown') return t('menu.markdown')
+    if (kind === 'html') return t('menu.html')
+    if (kind === 'pdf') return t('menu.pdf')
+    if (kind === 'copy') return t('menu.copy')
+    return t('menu.image')
   }
 
   /**
@@ -334,6 +344,11 @@ class ExportController {
     try {
       if (kind === 'markdown') {
         downloadBlob(`${stem}.md`, 'text/markdown;charset=utf-8', buildMarkdown(title, messages))
+      } else if (kind === 'copy') {
+        await copyText(buildMarkdown(title, messages))
+        this.toast(t('toast.copyDone'))
+      } else if (kind === 'html') {
+        await exportHtml(title, messages, { signal: abort.signal })
       } else if (kind === 'pdf') {
         await exportPdf(title, messages, { signal: abort.signal, onProgress })
       } else {
@@ -342,9 +357,14 @@ class ExportController {
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         this.toast(t('toast.cancelled'))
-      } else {
+      } else if (kind === 'copy') {
+        // 剪贴板不可用（非安全上下文 / 无权限）：降级提示改走下载。
+        this.toast(t('toast.copyFail'))
+      } else if (kind === 'image') {
         // Raster failures degrade to a visible toast.
         this.toast(t('toast.imageFail'))
+      } else {
+        this.toast(t('toast.exportFail'))
       }
     } finally {
       this.running = null
@@ -470,7 +490,7 @@ class ExportController {
     const formatGroup = document.createElement('div')
     formatGroup.setAttribute('data-cx-group', '')
     const formatBtns = new Map<ExportKind, HTMLButtonElement>()
-    for (const kind of ['markdown', 'pdf', 'image'] as const) {
+    for (const kind of ['markdown', 'html', 'pdf', 'image'] as const) {
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.setAttribute('data-dsh-conv-export-panel-format-option', '')

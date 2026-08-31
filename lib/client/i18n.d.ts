@@ -10,13 +10,18 @@ declare const zh: {
     'action.aria': string;
     'action.hint': string;
     'menu.markdown': string;
+    'menu.html': string;
     'menu.pdf': string;
     'menu.image': string;
+    'menu.copy': string;
     'menu.select': string;
     'menu.batch': string;
     'role.user': string;
     'role.assistant': string;
     'toast.imageFail': string;
+    'toast.exportFail': string;
+    'toast.copyDone': string;
+    'toast.copyFail': string;
     'toast.cancelled': string;
     'panel.title': string;
     'panel.caption': string;

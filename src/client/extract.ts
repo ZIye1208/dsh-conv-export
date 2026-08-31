@@ -48,9 +48,7 @@ export function resolveScope(from: ParentNode = document): HTMLElement | null {
  * @returns the trimmed title, or null when absent.
  */
 export function readTitle(): string | null {
-  const el = document.querySelector(TITLE_SELECTOR)
-  const text = el?.textContent?.trim()
-  return text === '' || text === undefined ? null : (text ?? null)
+  return document.querySelector(TITLE_SELECTOR)?.textContent?.trim() || null
 }
 
 /**

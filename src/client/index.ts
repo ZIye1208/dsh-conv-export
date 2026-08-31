@@ -5,7 +5,7 @@
  * One contribution: an export icon button in the session header's action
  * row, registered into the harness's `conversation.session.header.actions`
  * slot (the additive seat for per-session controls beside the title). The
- * button opens a dropdown with the three sinks; extraction runs at click
+ * button opens a dropdown with the five sinks; extraction runs at click
  * time over the rendered transcript, so exports always match what the
  * reader sees.
  *

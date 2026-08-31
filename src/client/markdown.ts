@@ -100,8 +100,9 @@ function table(el: HTMLElement): string {
     .map(td => inline(td).trim().replace(/\|/g, '\\|'))
   const out: string[] = []
   rows.forEach((tr, i) => {
-    out.push(`| ${cells(tr).join(' | ')} |`)
-    if (i === 0) out.push(`| ${cells(tr).map(() => '---').join(' | ')} |`)
+    const row = cells(tr)
+    out.push(`| ${row.join(' | ')} |`)
+    if (i === 0) out.push(`| ${row.map(() => '---').join(' | ')} |`)
   })
   return out.join('\n')
 }

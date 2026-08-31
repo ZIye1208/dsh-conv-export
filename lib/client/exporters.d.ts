@@ -1,6 +1,7 @@
 /**
- * 三个导出汇：Markdown 下载、PDF 下载、PNG 长图。三者共享抽取出的
- * 对话回合列表；均不触碰在线转录 DOM。
+ * 五个导出汇：Markdown 下载、复制 Markdown（剪贴板）、自包含单文件
+ * HTML 下载、PDF 下载、PNG 长图。全部共享抽取出的对话回合列表；均不
+ * 触碰在线转录 DOM。
  *
  * PDF 路径绝不打开打印窗口：`window.print()` 在部分平台（尤其 Windows
  * Chrome）是窗口模态对话框，会冻结整个浏览器（包括应用标签页）直至
@@ -30,12 +31,27 @@ import type { ExtractedMessage } from './extract.ts';
  */
 export declare function downloadBlob(filename: string, mime: string, data: BlobPart): void;
 /**
+ * 写入剪贴板（复制 Markdown 汇）。
+ * @param text - 待写入的文本。
+ * @throws 剪贴板不可用（非安全上下文 / 无权限）时抛出。
+ */
+export declare function copyText(text: string): Promise<void>;
+/**
  * 组装导出正文 HTML（PDF 页与长图共享）。
  * @param title - 会话标题。
  * @param messages - 抽取出的对话回合。
  * @returns 正文标记字符串。
  */
 export declare function buildExportHtml(title: string, messages: readonly ExtractedMessage[]): string;
+/**
+ * 组装自包含的单文件 HTML 文档（HTML 导出汇）：完整文档骨架 + 内联
+ * 导出样式表，无外部依赖，浏览器双击即读、打印即存 PDF。
+ * 纯函数，导出仅为单测。
+ * @param title - 会话标题（经 HTML 转义落入 <title>）。
+ * @param bodyHtml - 已内联图片的正文标记（buildExportHtml 的产物）。
+ * @returns 完整 HTML 文档字符串。
+ */
+export declare function buildHtmlDocument(title: string, bodyHtml: string): string;
 /** 导出进度回调：done 已完成片/页数，total 总数。 */
 export type RasterProgress = (done: number, total: number) => void;
 /** 光栅导出选项：进度回调与取消信号。 */
@@ -121,4 +137,15 @@ export declare function exportPdf(title: string, messages: readonly ExtractedMes
  * @throws 运行环境无法光栅化/编码时抛出；取消信号触发 AbortError。
  */
 export declare function exportImage(title: string, messages: readonly ExtractedMessage[], options?: RasterExportOptions): Promise<void>;
+/**
+ * 导出为自包含单文件 HTML：正文组装 + 图片内联（data URL）→ 完整文档
+ * 下载。不经光栅化——文本保持可选可检索、可搜索；样式全部内联，浏览
+ * 器双击即读，内嵌打印样式使「打印 → 存为 PDF」成为可选文本 PDF 的
+ * 替代路径。
+ * @param title - 会话标题（同时为文件名词干，经安全化）。
+ * @param messages - 抽取出的对话回合。
+ * @param options - 取消信号（可选；图片内联期间可中止）。
+ * @throws 图片内联等运行时错误；取消信号触发 AbortError。
+ */
+export declare function exportHtml(title: string, messages: readonly ExtractedMessage[], options?: RasterExportOptions): Promise<void>;
 export {};
