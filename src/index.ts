@@ -15,7 +15,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { buildBatchZip, parseSessionIds, toSafeHttpError } from './host/batch.ts'
+import { buildBatchZip, enrichSessionTitles, normalizeSessionHeaders, parseSessionIds, toSafeHttpError } from './host/batch.ts'
 import { createRouter, sendJson } from './host/http.ts'
 
 /** Stable Cordis plugin name (matches the manifest id). */
@@ -41,9 +41,13 @@ export function apply(ctx: Context): void {
       }),
 
       // 会话列表（批量选择面板数据源）。
+      // 真实宿主返回嵌套语料记录且头不含标题：先归一化为扁平头，再经
+      // readTitleSnapshots（可选）折取标题，浏览器侧契约保持不变。
       router.add('GET', '/sessions', async (_req, res) => {
         try {
-          const sessions = await ctx.sessionQuery.listSessions()
+          const records = await ctx.sessionQuery.listSessions()
+          const sessions = normalizeSessionHeaders(records)
+          await enrichSessionTitles(ctx.sessionQuery, sessions)
           sendJson(res, 200, { sessions })
         } catch (error) {
           throw toSafeHttpError(error, '获取会话列表失败')

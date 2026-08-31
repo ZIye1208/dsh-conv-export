@@ -6,23 +6,26 @@
 
 English | [中文](README.md)
 
-Export the current DeepSeek Harness conversation as **Markdown**, **PDF** (downloaded directly — no print dialog), or a **long PNG image**, and **batch-export** multiple historical sessions as a Markdown ZIP — one click in the session header, zero core changes.
+Export the current DeepSeek Harness conversation as **Markdown**, a **self-contained single-file HTML**, a **PDF** (downloaded directly — no print dialog), or a **long PNG image**, **copy the Markdown** to the clipboard in one click, and **batch-export** multiple historical sessions as a Markdown ZIP — one click in the session header, zero core changes.
 
 ## Problems it solves
 
 - **Conversations evaporate**: long sessions hold decisions, code, and error trails, but the harness has no built-in way to take them out. This plugin turns the rendered transcript into portable artifacts.
 - **One format never fits**: sharing with a teammate wants Markdown; archiving for compliance wants PDF; pasting into chat wants an image. All three ship in one menu.
 - **One artifact often isn't enough either**: handoffs and archives frequently need several historical sessions in one go. Batch export renders each as its own Markdown file and packs them into a single ZIP.
+- **The ZIP itself is an archive**: every batch-export ZIP ships with an `index.html` offline viewer and a machine-readable `manifest.json` — unzip, double-click, and browse all sessions with instant full-text search, per-session copy / download, no server and no network required.
 - **Exports must match what you see**: extraction runs at click time over the rendered DOM (including paged-in history), so the artifact is exactly the transcript on screen — code fences, tables, and emphasis preserved.
 
 ## Features
 
 - **Header export button** (download glyph) registered into the `conversation.session.header.actions` slot — additive, safely uninstalled, and mirrors its open state via `aria-pressed`.
-- **Dropdown menu** with three sinks plus turn selection:
+- **Dropdown menu** with five sinks plus turn selection:
   - **Markdown (.md)** — client-side download; assistant turns are serialized back from rendered HTML (headings, lists, fenced code with language, tables, blockquotes, links, inline emphasis).
+  - **HTML (.html)** — a self-contained single file: styles inlined, images converted to data URLs, opens with a double-click and shares as-is; text stays selectable and searchable, and the embedded print stylesheet makes "print → save as PDF" the selectable-text alternative to the raster PDF.
   - **PDF (download)** — tiled rasterization sliced into A4-proportioned pages (page boundaries align with tile boundaries, page count unbounded, peak memory bounded to one tile), downloaded as a self-contained multi-page PDF. No print window, no dialog: the app tab never freezes.
   - **Long image (PNG)** — tiled rasterization (`foreignObject` windows via `translateY`, tile height = A4 page height × 2) plus a streaming PNG encoder (tile-level adaptive row filtering → incremental `CompressionStream('deflate')` compression), images inlined as data URLs. The PNG spec has no height cap; the sane ceiling is ~176 A4 pages (200,000 CSS px). Environments without `CompressionStream` fall back to the legacy single-canvas truncation path (16000px).
-  - **Select turns…** — opens a turn-selection panel: check turns individually (role + content preview, all checked by default), select all/none with a live count, pick the export format, and confirm to export only the checked turns (e.g. drop failed attempts or off-topic tangents). During export the confirm button shows tile progress; clicking it again or Cancel aborts.
+  - **Copy Markdown** — writes the Markdown straight to the clipboard, skipping the download-open-copy round trip; degrades to a visible hint when the clipboard is unavailable (insecure context).
+  - **Select turns…** — opens a turn-selection panel: check turns individually (role + content preview, all checked by default), select all/none with a live count, pick the export format (Markdown / HTML / PDF / long image), and confirm to export only the checked turns (e.g. drop failed attempts or off-topic tangents). During export the confirm button shows tile progress; clicking it again or Cancel aborts.
   - **Batch export sessions…** — opens a session-selection panel: real-time filtering by title / session ID, per-session checkboxes, select all/none (applies to the current filter result and unions with the existing selection), and a live selected count. Confirm and each selected session is rendered as its own Markdown, packed into a single ZIP download (up to 100 sessions per run, auto-deduplicated; unreadable sessions are skipped without blocking the rest). While packing, the confirm button shows "Packing…" and clicking it again or Cancel aborts; Escape / backdrop clicks don't close the panel mid-pack.
 - **Sensible file names** from the session title (sanitized, capped).
 - Follows the harness `--dsw-alias-*` design tokens; menu labels switch zh/en by document language.
@@ -45,9 +48,11 @@ The package declares `dsh.bundle.patch` (mounts the host registration row) and `
 
 ## Usage
 
-Open any conversation, click the download icon in the session header, pick a format. All three formats download directly — no dialogs, the app tab stays responsive.
+Open any conversation, click the download icon in the session header, pick a format. All four download formats download directly — no dialogs, the app tab stays responsive; "Copy Markdown" writes straight to the clipboard.
 
-**Batch export**: pick "Batch export sessions…" from the menu, filter and check the target sessions in the panel, confirm, and a ZIP downloads (one `.md` per session, each with a metadata header — session ID / creation time / turn count — and timestamps).
+**Batch export**: pick "Batch export sessions…" from the menu, filter and check the target sessions in the panel, confirm, and a ZIP downloads (one `.md` per session, each with a metadata header — session ID / creation time / turn count — and timestamps). The ZIP also bundles:
+- `index.html` — a self-contained offline viewer (double-click to open, works over `file://`): sidebar session list, instant full-text search across titles and bodies (press `/` to focus), rendered view with role badges / raw Markdown toggle, one-click copy and per-session `.md` download, with automatic light/dark theming;
+- `manifest.json` — a machine-readable index (`id → file` mapping, turn counts, export time) for scripts and external tooling.
 
 ## How it works
 
@@ -58,7 +63,7 @@ Open any conversation, click the download icon in the session header, pick a for
 ## Known limitations
 
 - The long-image and PDF paths rasterize through SVG `foreignObject` (all evergreen browsers paint it); exotic embedded content may flatten.
-- PDF pages are raster images (text is not selectable); for selectable text use the Markdown export.
+- PDF pages are raster images (text is not selectable); for selectable text use the Markdown or HTML export (the latter also prints to a selectable-text PDF from the browser).
 - Export scope is the active conversation column only — sidebar titles and settings pages are out of scope.
 - Batch export is Markdown-only (PDF / long images require per-session client-side rasterization and can't join a ZIP); batch entries are derived from session logs (raw text + metadata header), not reverse-serialized from rendered HTML, so rich-text formatting follows the log source.
 
