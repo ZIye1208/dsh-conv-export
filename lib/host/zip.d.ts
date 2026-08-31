@@ -12,6 +12,10 @@ export interface ZipEntry {
 export declare function sanitizeFileName(name: string): string;
 /**
  * 构建 ZIP 文件字节流。
+ *
+ * 单次分配：第一遍循环完成校验、文件名清理/编码与 CRC（并把中心目录
+ * 头写入暂存数组——每条目固定 46 字节，量级可忽略），累计精确总长后
+ * 第二遍直接写入唯一的目标缓冲区，无 concat、无逐块拷贝的中间数组。
  * @param entries 条目列表（名称在内部统一经 sanitizeFileName 强制清理）。
  * @returns 完整的 .zip 字节。
  * @throws 条目数超过 65535，或单条目超过 4GB（不支持 ZIP64）。
