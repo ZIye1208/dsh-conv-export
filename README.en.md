@@ -13,7 +13,7 @@ Export the current DeepSeek Harness conversation as **Markdown**, a **self-conta
 - **Conversations evaporate**: long sessions hold decisions, code, and error trails, but the harness has no built-in way to take them out. This plugin turns the rendered transcript into portable artifacts.
 - **One format never fits**: sharing with a teammate wants Markdown; archiving for compliance wants PDF; pasting into chat wants an image. All three ship in one menu.
 - **One artifact often isn't enough either**: handoffs and archives frequently need several historical sessions in one go. Batch export renders each as its own Markdown file and packs them into a single ZIP.
-- **The ZIP itself is an archive**: every batch-export ZIP ships with an `index.html` offline viewer and a machine-readable `manifest.json` — unzip, double-click, and browse all sessions with instant full-text search, per-session copy / download, no server and no network required.
+- **The ZIP itself is an archive**: every batch-export ZIP ships with an `index.html` offline viewer and a machine-readable `manifest.json` — unzip, double-click, and browse all sessions with instant full-text search, per-session copy / download, no server and no network required. The viewer is also a **smart archive**: the sidebar lays sessions out on a date-grouped timeline, each entry carries a first-question preview (know the topic without opening it), and a stats bar sums up session count / total turns / time span; the manifest mirrors per-session `preview` fields and a global `stats` block, so scripts and external tooling can consume the archive profile directly.
 - **Exports must match what you see**: extraction runs at click time over the rendered DOM (including paged-in history), so the artifact is exactly the transcript on screen — code fences, tables, and emphasis preserved.
 
 ## Features
@@ -51,8 +51,8 @@ The package declares `dsh.bundle.patch` (mounts the host registration row) and `
 Open any conversation, click the download icon in the session header, pick a format. All four download formats download directly — no dialogs, the app tab stays responsive; "Copy Markdown" writes straight to the clipboard.
 
 **Batch export**: pick "Batch export sessions…" from the menu, filter and check the target sessions in the panel, confirm, and a ZIP downloads (one `.md` per session, each with a metadata header — session ID / creation time / turn count — and timestamps). The ZIP also bundles:
-- `index.html` — a self-contained offline viewer (double-click to open, works over `file://`): sidebar session list, instant full-text search across titles and bodies (press `/` to focus), rendered view with role badges / raw Markdown toggle, one-click copy and per-session `.md` download, with automatic light/dark theming;
-- `manifest.json` — a machine-readable index (`id → file` mapping, turn counts, export time) for scripts and external tooling.
+- `index.html` — a self-contained offline viewer (double-click to open, works over `file://`): the sidebar is a date-grouped timeline with sticky day headers, each session entry carries a first-question preview (clamped to two lines), and a stats bar sums up session count / total turns / time span; instant full-text search across titles, previews, and bodies (press `/` to focus, hit highlighting, no-match hint), rendered view with role badges / raw Markdown toggle, one-click copy and per-session `.md` download, with automatic light/dark theming;
+- `manifest.json` — a machine-readable index (version 2): `id → file` mapping, turn counts, per-session `preview` fields and a global `stats` block (sessions / total turns / time span), and the export time, for scripts and external tooling.
 
 ## How it works
 

@@ -337,14 +337,41 @@ describe('buildBatchZip', () => {
 
     const manifest = JSON.parse(new TextDecoder().decode(zip.read('manifest.json')))
     expect(manifest.kind).toBe('dsh-conv-export-archive')
+    expect(manifest.version).toBe(2)
+    expect(manifest.stats).toEqual({
+      sessions: 2,
+      turns: 0,
+      firstAt: 1_700_000_000_000,
+      lastAt: 1_700_000_000_000,
+    })
     expect(manifest.sessions).toEqual([
-      { id: 's1', title: 's1-title', createdAt: 1_700_000_000_000, turns: 0, file: 's1-title.md' },
-      { id: 's2', title: 's2-title', createdAt: 1_700_000_000_000, turns: 0, file: 's2-title.md' },
+      { id: 's1', title: 's1-title', createdAt: 1_700_000_000_000, turns: 0, preview: '', file: 's1-title.md' },
+      { id: 's2', title: 's2-title', createdAt: 1_700_000_000_000, turns: 0, preview: '', file: 's2-title.md' },
     ])
 
     const viewer = new TextDecoder().decode(zip.read('index.html'))
     expect(viewer).toContain('<!DOCTYPE html>')
     expect(viewer).toContain('s1-title')
+  })
+
+  it('derives the smart-archive preview from the first user turn', async () => {
+    const query: SessionQueryEngine = {
+      listSessions: async () => [],
+      readSession: async (id: string) =>
+        snapshot(id, `${id}-title`, [
+          { type: 'user/message', data: { content: `  ${id} 的\n\n首个问题   ` } },
+          { type: 'assistant/message', data: { content: '回答' } },
+        ]),
+    }
+    const result = await buildBatchZip(query, ['s1'])
+    const zip = new ZipReader(result.bytes)
+    const manifest = JSON.parse(new TextDecoder().decode(zip.read('manifest.json')))
+    // 摘要压缩空白；仅首条用户消息进入 preview。
+    expect(manifest.sessions[0]).toMatchObject({ id: 's1', turns: 2, preview: 's1 的 首个问题' })
+    expect(manifest.stats).toEqual({ sessions: 1, turns: 2, firstAt: 1_700_000_000_000, lastAt: 1_700_000_000_000 })
+    // 阅读器 payload 同样携带摘要（时间线侧栏不点开即知主题）。
+    const viewer = new TextDecoder().decode(zip.read('index.html'))
+    expect(viewer).toContain('s1 的 首个问题')
   })
 })
 

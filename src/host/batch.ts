@@ -7,7 +7,7 @@
  * - 条目重名经 -2/-3 后缀去重；全部失败 → 404；
  * - 条目为日志派生的 Markdown（含元信息头与时间戳，见 ./transcript.ts）。
  */
-import { buildArchiveManifest, buildArchiveViewerHtml, type ArchiveManifestEntry, type ArchiveSessionData } from './archive.ts'
+import { archivePreview, buildArchiveManifest, buildArchiveViewerHtml, type ArchiveManifestEntry, type ArchiveSessionData } from './archive.ts'
 import { HttpError } from './http.ts'
 import { beijingDayKey } from './time.ts'
 import { titleFromLog, transcriptFromLog, transcriptToMarkdown } from './transcript.ts'
@@ -161,6 +161,8 @@ export async function buildBatchZip(
           const base = sanitizeFileName(title || session.id)
           const name = `${base}.md`
           const markdown = transcriptToMarkdown(header, turns, { timestamps: true })
+          // 智能档案层摘要：首条用户消息（无则空串），侧栏/manifest 不点开即知主题。
+          const firstUser = turns.find(turn => turn.role === 'user')
           slots[index] = {
             entry: { name, data: encoder.encode(markdown) },
             archive: {
@@ -169,6 +171,7 @@ export async function buildBatchZip(
               createdAt: session.createdAt,
               ...(typeof session.updatedAt === 'number' ? { updatedAt: session.updatedAt } : {}),
               turnCount: turns.length,
+              preview: archivePreview(firstUser?.text ?? ''),
               markdown,
             },
           }
@@ -195,6 +198,7 @@ export async function buildBatchZip(
       createdAt: slot.archive.createdAt,
       ...(slot.archive.updatedAt !== undefined ? { updatedAt: slot.archive.updatedAt } : {}),
       turns: slot.archive.turnCount,
+      preview: slot.archive.preview,
       file: name,
     })
     archiveSessions.push(slot.archive)

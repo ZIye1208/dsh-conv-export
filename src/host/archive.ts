@@ -21,6 +21,8 @@ export interface ArchiveSessionData {
   readonly createdAt: number
   readonly updatedAt?: number
   readonly turnCount: number
+  /** 首条用户消息的摘要（不点开即知会话主题；无则空串）。 */
+  readonly preview: string
   /** 该会话的完整 Markdown 源文本（与 ZIP 内 .md 条目逐字节一致）。 */
   readonly markdown: string
 }
@@ -32,8 +34,46 @@ export interface ArchiveManifestEntry {
   readonly createdAt: number
   readonly updatedAt?: number
   readonly turns: number
+  /** 首条用户消息的摘要（与阅读器一致，便于外部工具直接展示）。 */
+  readonly preview?: string
   /** ZIP 内对应的 Markdown 条目名。 */
   readonly file: string
+}
+
+/** 档案全局统计（manifest.stats 与阅读器统计条共同消费）。 */
+export interface ArchiveStats {
+  readonly sessions: number
+  readonly turns: number
+  /** 最早创建时间（无会话时缺省）。 */
+  readonly firstAt?: number
+  /** 最晚创建时间（无会话时缺省）。 */
+  readonly lastAt?: number
+}
+
+/**
+ * 折取档案摘要：压缩空白并截断至 96 字符（无内容时空串）。
+ * 与浏览器侧回合面板的 previewOf 同一纪律，宿主半独立实现。
+ */
+export function archivePreview(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > 96 ? `${flat.slice(0, 96)}…` : flat
+}
+
+/**
+ * 从会话条目折取全局统计：会话数、总轮次、时间跨度。
+ * 纯函数，空档案返回零值。
+ */
+export function buildArchiveStats(entries: readonly ArchiveManifestEntry[]): ArchiveStats {
+  if (entries.length === 0) return { sessions: 0, turns: 0 }
+  let turns = 0
+  let firstAt = Number.POSITIVE_INFINITY
+  let lastAt = Number.NEGATIVE_INFINITY
+  for (const entry of entries) {
+    turns += entry.turns
+    if (entry.createdAt < firstAt) firstAt = entry.createdAt
+    if (entry.createdAt > lastAt) lastAt = entry.createdAt
+  }
+  return { sessions: entries.length, turns, firstAt, lastAt }
 }
 
 /** JSON 嵌入 <script> 前的安全转义（</script> 序列必须在字符串内断开）。 */
@@ -42,7 +82,9 @@ function escapeScriptJson(json: string): string {
 }
 
 /**
- * 生成 manifest.json 内容（机器可读索引：id → 文件名映射、轮次计数）。
+ * 生成 manifest.json 内容（机器可读索引：id → 文件名映射、轮次计数、
+ * 每会话摘要与全局统计）。version 2：新增 stats 与 preview 字段，
+ * 旧字段全部保留（纯增量，旧消费者不受影响）。
  */
 export function buildArchiveManifest(
   entries: readonly ArchiveManifestEntry[],
@@ -51,8 +93,9 @@ export function buildArchiveManifest(
   return `${JSON.stringify(
     {
       kind: 'dsh-conv-export-archive',
-      version: 1,
+      version: 2,
       exportedAt: meta.exportedAt,
+      stats: buildArchiveStats(entries),
       sessions: entries,
     },
     null,
@@ -87,6 +130,8 @@ body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "PingFang S
 @media (prefers-color-scheme: dark) {
   body { background: #0d1117; color: #e6edf3; }
   .side, .paper { background: #161b22; }
+  .grp { background: #161b22; color: #8b949e; border-bottom-color: #21262d; }
+  .item { border-bottom-color: #21262d; }
   .turn.user .bubble { background: #1c2a4a; }
   .turn.assistant .bubble { background: #143427; }
   input, button { background: #21262d; color: #e6edf3; border-color: #30363d; }
@@ -99,11 +144,16 @@ body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "PingFang S
   border-radius: 8px; font-size: 13px; outline: none; }
 .side input:focus { border-color: #4c8dff; box-shadow: 0 0 0 3px rgba(76,141,255,.18); }
 .list { overflow-y: auto; flex: 1; }
+.grp { position: sticky; top: 0; z-index: 1; padding: 6px 14px 5px; font-size: 11px;
+  font-weight: 600; letter-spacing: .04em; color: #57606a; background: #fff;
+  border-bottom: 1px solid #eaeef2; }
 .item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #eaeef2; }
 .item:hover { background: rgba(76,141,255,.07); }
 .item.active { background: rgba(76,141,255,.14); }
 .item .t { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item .d { font-size: 11px; opacity: .6; margin-top: 2px; }
+.item .p { font-size: 11.5px; opacity: .62; margin-top: 3px; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.item .d { font-size: 11px; opacity: .6; margin-top: 3px; }
 .item mark { background: #ffe08a; color: inherit; border-radius: 2px; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .bar { padding: 10px 18px; display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
@@ -159,6 +209,12 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; border: 1px solid #
     function p(n) { return n < 10 ? '0' + n : '' + n }
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
   }
+  // 日期分组键（本地时区）：时间线侧栏按创建日聚合会话。
+  function dayKey(ts) {
+    var d = new Date(ts)
+    function p(n) { return n < 10 ? '0' + n : '' + n }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+  }
   // 从嵌入的 Markdown 源解析轮次（渲染视图用；无需完整 Markdown 引擎）。
   function turnsOf(md) {
     var out = [], lines = md.split('\\n'), role = '', buf = []
@@ -199,13 +255,31 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; border: 1px solid #
   function renderList() {
     var items = filtered()
     list.innerHTML = ''
+    if (items.length === 0) {
+      var none = document.createElement('div')
+      none.className = 'grp'
+      none.textContent = query ? '没有匹配的会话' : '暂无会话'
+      list.appendChild(none)
+      return
+    }
+    var lastDay = ''
     items.forEach(function (s) {
+      var day = dayKey(s.createdAt)
+      if (day !== lastDay) {
+        lastDay = day
+        var grp = document.createElement('div')
+        grp.className = 'grp'
+        grp.textContent = day
+        list.appendChild(grp)
+      }
       var div = document.createElement('div')
       div.className = 'item' + (SESSIONS.indexOf(s) === current ? ' active' : '')
       var title = s.title || s.id
       var hit = query && s.markdown.toLowerCase().indexOf(query.toLowerCase()) >= 0 && title.toLowerCase().indexOf(query.toLowerCase()) < 0
-      div.innerHTML = '<div class="t">' + hl(title) + '</div><div class="d">' + fmt(s.createdAt) +
-        ' · ' + s.turnCount + ' 轮' + (hit ? ' · 正文命中' : '') + '</div>'
+      var inner = '<div class="t">' + hl(title) + '</div>'
+      if (s.preview) inner += '<div class="p">' + hl(s.preview) + '</div>'
+      inner += '<div class="d">' + fmt(s.createdAt) + ' · ' + s.turnCount + ' 轮' + (hit ? ' · 正文命中' : '') + '</div>'
+      div.innerHTML = inner
       div.onclick = function () { open(SESSIONS.indexOf(s)) }
       list.appendChild(div)
     })
@@ -227,7 +301,17 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; border: 1px solid #
     renderList()
   }
 
-  meta.textContent = SESSIONS.length + ' 个会话 · 导出于 ' + fmt(${String(meta.exportedAt)})
+  // 智能统计条：会话数 · 总轮次 · 时间跨度 · 导出时间（现场折取，零外部依赖）。
+  var totalTurns = 0, firstAt = Infinity, lastAt = -Infinity
+  SESSIONS.forEach(function (s) {
+    totalTurns += s.turnCount
+    if (s.createdAt < firstAt) firstAt = s.createdAt
+    if (s.createdAt > lastAt) lastAt = s.createdAt
+  })
+  var span = SESSIONS.length === 0 ? '' : dayKey(firstAt) === dayKey(lastAt)
+    ? dayKey(firstAt) : dayKey(firstAt) + ' → ' + dayKey(lastAt)
+  meta.textContent = SESSIONS.length + ' 个会话 · ' + totalTurns + ' 轮' +
+    (span ? ' · ' + span : '') + ' · 导出于 ' + fmt(${String(meta.exportedAt)})
   q.addEventListener('input', function () { query = q.value.trim(); current = -1; renderList() })
   document.addEventListener('keydown', function (e) {
     if (e.key === '/' && document.activeElement !== q) { e.preventDefault(); q.focus() }

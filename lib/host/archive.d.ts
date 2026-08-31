@@ -20,6 +20,8 @@ export interface ArchiveSessionData {
     readonly createdAt: number;
     readonly updatedAt?: number;
     readonly turnCount: number;
+    /** 首条用户消息的摘要（不点开即知会话主题；无则空串）。 */
+    readonly preview: string;
     /** 该会话的完整 Markdown 源文本（与 ZIP 内 .md 条目逐字节一致）。 */
     readonly markdown: string;
 }
@@ -30,11 +32,34 @@ export interface ArchiveManifestEntry {
     readonly createdAt: number;
     readonly updatedAt?: number;
     readonly turns: number;
+    /** 首条用户消息的摘要（与阅读器一致，便于外部工具直接展示）。 */
+    readonly preview?: string;
     /** ZIP 内对应的 Markdown 条目名。 */
     readonly file: string;
 }
+/** 档案全局统计（manifest.stats 与阅读器统计条共同消费）。 */
+export interface ArchiveStats {
+    readonly sessions: number;
+    readonly turns: number;
+    /** 最早创建时间（无会话时缺省）。 */
+    readonly firstAt?: number;
+    /** 最晚创建时间（无会话时缺省）。 */
+    readonly lastAt?: number;
+}
 /**
- * 生成 manifest.json 内容（机器可读索引：id → 文件名映射、轮次计数）。
+ * 折取档案摘要：压缩空白并截断至 96 字符（无内容时空串）。
+ * 与浏览器侧回合面板的 previewOf 同一纪律，宿主半独立实现。
+ */
+export declare function archivePreview(text: string): string;
+/**
+ * 从会话条目折取全局统计：会话数、总轮次、时间跨度。
+ * 纯函数，空档案返回零值。
+ */
+export declare function buildArchiveStats(entries: readonly ArchiveManifestEntry[]): ArchiveStats;
+/**
+ * 生成 manifest.json 内容（机器可读索引：id → 文件名映射、轮次计数、
+ * 每会话摘要与全局统计）。version 2：新增 stats 与 preview 字段，
+ * 旧字段全部保留（纯增量，旧消费者不受影响）。
  */
 export declare function buildArchiveManifest(entries: readonly ArchiveManifestEntry[], meta: {
     exportedAt: number;
