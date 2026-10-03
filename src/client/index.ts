@@ -14,7 +14,8 @@
  * Zero core changes: everything rides cordis effects and declared slots.
  */
 import { createElement, type ReactElement } from 'react'
-import { controller, TURN_BUTTON_CLASS } from './controller.ts'
+import { controller } from './controller.ts'
+import { TURN_BUTTON_CLASS } from './extract.ts'
 import { adoptStyles } from './styles.ts'
 import { t } from './i18n.ts'
 
@@ -53,12 +54,32 @@ interface ClientContextFace {
 }
 
 /**
- * The slot props this plugin ignores (header kit / strip `messageId`); the
- * buttons resolve their own scope from the DOM instead.
+ * Slot props: the header kit carries `sessionId`; the assistant-actions strip
+ * carries `messageId`, which pins the exact reply during extraction.
  */
 interface SlotProps {
   readonly sessionId?: string
   readonly messageId?: string
+}
+
+/**
+ * Adopt the strip's own button styling: copy the sibling button's class list
+ * onto ours, so colour, metrics, hover and skin overrides come out identical
+ * instead of our neutral defaults fighting the theme. Falls back to the
+ * `:where(.dsh-conv-export-turn)` base when no sibling button exists yet.
+ * @param el - the freshly mounted per-turn button.
+ */
+function adoptStripLook(el: HTMLElement): void {
+  const strip = el.parentElement
+  if (strip === null) return
+  const buttons = Array.from(strip.querySelectorAll('button'))
+    .filter((node): node is HTMLButtonElement =>
+      node !== el && !node.classList.contains(TURN_BUTTON_CLASS))
+  const sibling = buttons[0]
+  if (sibling === undefined) return
+  for (const cls of Array.from(sibling.classList)) {
+    if (!el.classList.contains(cls)) el.classList.add(cls)
+  }
 }
 
 /**
@@ -112,10 +133,10 @@ function ExportActionButton(_props: SlotProps): ReactElement {
 /**
  * The per-turn export button rendered into every finalized assistant
  * reply's IconActions strip: opens the same dropdown scoped to this turn.
- * @param _props - the strip's kit (`messageId`, unused — scope comes from DOM).
+ * @param props - the strip's kit; `messageId` pins the exact reply.
  * @returns the icon button.
  */
-function TurnExportButton(_props: SlotProps): ReactElement {
+function TurnExportButton(props: SlotProps): ReactElement {
   return createElement(
     'button',
     {
@@ -124,8 +145,12 @@ function TurnExportButton(_props: SlotProps): ReactElement {
       title: t('turn.hint'),
       'aria-label': t('turn.aria'),
       'aria-pressed': 'false',
+      // 挂载后吸收同排按钮的 class：颜色/尺寸/hover 与皮肤一并跟随。
+      ref: (el: HTMLElement | null): void => {
+        if (el !== null) adoptStripLook(el)
+      },
       onClick: (e: { currentTarget: EventTarget }) => {
-        controller.toggle(e.currentTarget as Element)
+        controller.toggle(e.currentTarget as Element, props.messageId)
       },
     },
     downloadGlyph(),

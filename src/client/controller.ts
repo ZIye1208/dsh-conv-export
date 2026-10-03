@@ -28,7 +28,14 @@
  * Lifecycle: `install()` from the cordis apply (menu mount + outside-click
  * close), `uninstall()` on plugin unload.
  */
-import { extractMessages, extractTurn, readTitle, resolveScope, safeFileStem } from './extract.ts'
+import {
+  extractMessages,
+  extractTurn,
+  readTitle,
+  resolveScope,
+  safeFileStem,
+  TURN_BUTTON_CLASS,
+} from './extract.ts'
 import type { ExtractedMessage, TurnExtract } from './extract.ts'
 import { buildMarkdown } from './markdown.ts'
 import { copyText, downloadBlob, exportHtml, exportImage, exportPdf } from './exporters.ts'
@@ -62,9 +69,6 @@ const ICONS = {
   chevron:
     '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.2 3.6L10.6 8l-4.4 4.4"/></svg>',
 } as const
-
-/** Class shared by every per-turn export button (strip entry + CSS hooks). */
-export const TURN_BUTTON_CLASS = 'dsh-conv-export-turn'
 
 /**
  * 写入按钮标签：按钮内含 [data-cx-label] 容器时写入之，保留图标/标签/
@@ -156,10 +160,12 @@ class ExportController {
   /**
    * Toggle the dropdown (header button **or** per-turn strip button),
    * anchoring it under the triggering element. 选择面板打开时不弹菜单。
-   * 打开时按触发器判定模式：每轮按钮 → 单轮提取；头部按钮 → 全会话。
+   * 打开时按触发器判定模式：每轮按钮 → 单轮提取（messageId 用于精确定位）；
+   * 头部按钮 → 全会话。
    * @param anchor - the button that owns the menu (positions it).
+   * @param messageId - slot-provided assistant message id (per-turn only).
    */
-  toggle(anchor?: Element): void {
+  toggle(anchor?: Element, messageId?: string): void {
     if (this.menu === null) return
     if (this.panel !== null) return
     if (resolveScope() === null) return
@@ -170,7 +176,7 @@ class ExportController {
     if (open) {
       this.trigger = anchor instanceof HTMLElement ? anchor : null
       this.turn = anchor instanceof HTMLElement && anchor.classList.contains(TURN_BUTTON_CLASS)
-        ? extractTurn(anchor)
+        ? extractTurn(anchor, messageId)
         : null
       this.menu.setAttribute('data-mode', this.turn !== null ? 'turn' : 'session')
       if (this.trigger !== null) {

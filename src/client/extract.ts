@@ -101,9 +101,15 @@ export function fromMarkdownNode(node: HTMLElement): ExtractedMessage | null {
   return { role: 'assistant', text, html: node.innerHTML }
 }
 
+/** Class shared by every per-turn export button (strip entry + CSS hooks). */
+export const TURN_BUTTON_CLASS = 'dsh-conv-export-turn'
+
+/** Selector matching this plugin's own per-turn buttons inside a pane. */
+const TURN_BUTTON_SELECTOR = `.${TURN_BUTTON_CLASS}`
+
 /** Per-turn extraction result (the assistant-actions strip's export entry). */
 export interface TurnExtract {
-  /** The turn(s) inside the anchored wrapper, in document order. */
+  /** The turn's segment (user question when adjacent + the reply), document order. */
   readonly messages: readonly ExtractedMessage[]
   /** 1-based ordinal among every assistant markdown container in the pane; 0 = unknown. */
   readonly index: number
@@ -113,38 +119,55 @@ export interface TurnExtract {
  * Extract the single turn that owns `anchor` — the per-turn export button
  * rendered into `conversation.chat.assistant-actions`.
  *
- * Resolution order:
- * 1. the nearest `[data-chat-anchor-key]` ancestor (DSH renders one chat-node
- *    seat per turn; extracting inside it yields exactly that segment);
- * 2. fallback — the top-level markdown container closest to the button
- *    (deepest shared ancestor wins), so a future seat rename degrades to
- *    "the reply next to this button" instead of nothing.
+ * The strip does NOT reliably sit inside the reply's own wrapper, so ancestry
+ * is only a hint; resolution therefore layers three independent probes:
  *
- * @param anchor - the per-turn export button (or any node inside the strip).
+ * 1. **messageId seat** — the slot hands us the assistant message id; the
+ *    pane keys its chat-node seats by message key, so a seat containing that
+ *    id pins the body exactly.
+ * 2. **button ordinal** — the plugin renders one button per finalized reply,
+ *    so with `buttons.length === bodies.length` the Nth button maps to the
+ *    Nth body. Correct even when every strip shares one container (the layout
+ *    that made ancestry return the first reply for every button).
+ * 3. **document order** — the body immediately preceding the strip (strips
+ *    render under their reply); falls forward when a strip renders above it.
+ *
+ * The user question directly preceding the chosen body joins the segment, so
+ * "this turn" exports ask + answer.
+ *
+ * @param anchor - the per-turn export button.
+ * @param messageId - slot-provided assistant message id (may be undefined).
  * @returns the turn payload, or null when no rendered body is reachable.
  */
-export function extractTurn(anchor: Element): TurnExtract | null {
+export function extractTurn(anchor: Element, messageId?: string): TurnExtract | null {
   const port = resolveScope()
   if (port === null) return null
 
-  let messages: ExtractedMessage[] = []
-  for (let node: Element | null = anchor.parentElement; node !== null && node !== port;
-    node = node.parentElement) {
-    if (node instanceof HTMLElement && node.hasAttribute('data-chat-anchor-key')) {
-      messages = extractMessages(node)
-      break
+  const bodies = outermostMarkdown(port)
+  if (bodies.length === 0) return null
+
+  let md: HTMLElement | null = messageId === undefined || messageId === ''
+    ? null
+    : lastMarkdownIn(seatFor(port, messageId))
+  if (md === null) md = markdownByButtonOrdinal(port, anchor, bodies)
+  if (md === null) md = precedingMarkdown(port, anchor, bodies)
+  if (md === null) return null
+
+  const message = fromMarkdownNode(md)
+  if (message === null) return null
+
+  const ordered = messageRows(port)
+  const messages: ExtractedMessage[] = []
+  const at = ordered.indexOf(md)
+  if (at > 0) {
+    const prev = ordered[at - 1]
+    if (prev !== undefined && prev.matches(USER_ROW_SELECTOR)) {
+      const user = fromUserRow(prev)
+      if (user !== null) messages.push(user)
     }
   }
-
-  if (messages.length === 0) {
-    const md = nearestMarkdown(port, anchor)
-    if (md === null) return null
-    const message = fromMarkdownNode(md)
-    if (message === null) return null
-    messages = [message]
-  }
-
-  return { messages, index: assistantOrdinal(port, messages) }
+  messages.push(message)
+  return { messages, index: bodies.indexOf(md) + 1 }
 }
 
 /**
@@ -159,77 +182,122 @@ function outermostOwner(md: HTMLElement): HTMLElement | null {
 }
 
 /**
- * The top-level markdown container sharing the deepest ancestor with
- * `anchor` — the body rendered closest to a strip button.
+ * The seat keyed by a message id — DSH renders `[data-chat-anchor-key]` per
+ * chat node with a message-derived key; a substring match pins the exact
+ * message even when the key carries a prefix or suffix.
  * @param port - the conversation scrollport.
- * @param anchor - the per-turn export button.
- * @returns the container, or null when the pane renders no assistant body.
+ * @param messageId - the assistant message id from the slot.
+ * @returns the seat element, or null when no seat carries that id.
  */
-function nearestMarkdown(port: HTMLElement, anchor: Element): HTMLElement | null {
-  const all = Array.from(port.querySelectorAll<HTMLElement>(ASSISTANT_MD_SELECTOR))
-  // Nested containers (a card rendering markdown inside markdown) collapse to
-  // their outermost owner: only outermost candidates are considered.
-  const outermost = all.filter((md) => outermostOwner(md) === null)
+function seatFor(port: HTMLElement, messageId: string): HTMLElement | null {
+  const escaped = messageId.replace(/["\\]/g, '\\$&')
+  const exact = port.querySelector<HTMLElement>(`[data-chat-anchor-key="${escaped}"]`)
+  if (exact !== null) return exact
+  // 子串命中可能撞上更长的 id（"msg-1" ⊂ "msg-10"）：取键最短的那个，
+  // 即与精确匹配最接近的座位。
   let best: HTMLElement | null = null
-  let bestDepth = -1
-  for (const md of outermost) {
-    const common = sharedAncestor(md, anchor)
-    if (common === null || common === port) continue
-    const depth = ancestorDepth(common, port)
-    if (depth > bestDepth) {
-      best = md
-      bestDepth = depth
+  let bestLength = Number.POSITIVE_INFINITY
+  for (const el of port.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')) {
+    const key = el.getAttribute('data-chat-anchor-key') ?? ''
+    if (!key.includes(messageId)) continue
+    if (key.length < bestLength) {
+      best = el
+      bestLength = key.length
     }
   }
   return best
 }
 
 /**
- * Nearest common ancestor of two elements.
- * @param a - first element.
- * @param b - second element.
- * @returns their deepest shared ancestor, or null if disconnected.
+ * The outermost markdown bodies inside `seat` (last one wins — a seat may
+ * hold a chain of appends for the same message).
+ * @param seat - the seat element, or null.
+ * @returns the last body, or null when the seat renders none.
  */
-function sharedAncestor(a: Element, b: Element): Element | null {
-  const seen = new Set<Element>()
-  for (let node: Element | null = a; node !== null; node = node.parentElement) seen.add(node)
-  for (let node: Element | null = b; node !== null; node = node.parentElement) {
-    if (seen.has(node)) return node
-  }
-  return null
-}
-
-/**
- * Depth of `node` counted from `root` (root = 0); -1 when not a descendant.
- * @param node - the descendant candidate.
- * @param root - the scrollport.
- * @returns the depth, or -1.
- */
-function ancestorDepth(node: Element, root: HTMLElement): number {
-  let depth = 0
-  let cur: Element | null = node
-  while (cur !== null && cur !== root) {
-    depth++
-    cur = cur.parentElement
-  }
-  return cur === root ? depth : -1
-}
-
-/**
- * 1-based ordinal of the turn's first assistant body among every assistant
- * markdown container in the pane (0 when it is not in document order — e.g.
- * an unmounted wrapper read after a re-render).
- * @param port - the conversation scrollport.
- * @param messages - the extracted turn.
- * @returns the ordinal, or 0 when unknown.
- */
-function assistantOrdinal(port: HTMLElement, messages: readonly ExtractedMessage[]): number {
-  const target = messages.find((m) => m.role === 'assistant')
-  if (target === undefined) return 0
-  const all = Array.from(port.querySelectorAll<HTMLElement>(ASSISTANT_MD_SELECTOR))
+function lastMarkdownIn(seat: HTMLElement | null): HTMLElement | null {
+  if (seat === null) return null
+  const hits = Array.from(seat.querySelectorAll<HTMLElement>(ASSISTANT_MD_SELECTOR))
     .filter((md) => outermostOwner(md) === null)
-  const hit = all.findIndex((md) => (md.textContent ?? '').trim() === target.text)
-  return hit < 0 ? 0 : hit + 1
+  return hits.length === 0 ? null : hits[hits.length - 1] ?? null
+}
+
+/**
+ * Body at the clicked button's own ordinal: the plugin renders exactly one
+ * button per finalized reply, so equal counts make the mapping exact — and
+ * it stays correct when every strip shares a container (where "nearest by
+ * ancestry" collapses to the first reply for all buttons).
+ * @param port - the conversation scrollport.
+ * @param anchor - the clicked per-turn button.
+ * @param bodies - outermost bodies in document order.
+ * @returns the body, or null when counts differ / the button is absent.
+ */
+function markdownByButtonOrdinal(
+  port: HTMLElement,
+  anchor: Element,
+  bodies: readonly HTMLElement[],
+): HTMLElement | null {
+  const buttons = Array.from(port.querySelectorAll<HTMLElement>(TURN_BUTTON_SELECTOR))
+  const at = buttons.indexOf(anchor as HTMLElement)
+  if (at < 0 || buttons.length !== bodies.length) return null
+  return bodies[at] ?? null
+}
+
+/**
+ * Outermost markdown bodies in the pane, document order — nested containers
+ * (a card rendering markdown inside markdown) collapse to their owner.
+ * @param port - the conversation scrollport.
+ * @returns the bodies.
+ */
+function outermostMarkdown(port: HTMLElement): HTMLElement[] {
+  return Array.from(port.querySelectorAll<HTMLElement>(ASSISTANT_MD_SELECTOR))
+    .filter((md) => outermostOwner(md) === null)
+}
+
+/**
+ * User rows plus outermost bodies in document order — the sequence a "turn"
+ * segment is read from (a question sits immediately before its reply).
+ * @param port - the conversation scrollport.
+ * @returns the rows.
+ */
+function messageRows(port: HTMLElement): HTMLElement[] {
+  const sel = `${USER_ROW_SELECTOR}, ${ASSISTANT_MD_SELECTOR}`
+  return Array.from(port.querySelectorAll<HTMLElement>(sel))
+    .filter((node) => node.matches(USER_ROW_SELECTOR) || outermostOwner(node) === null)
+}
+
+/**
+ * The outermost body immediately preceding the strip in document order
+ * (strips render under their reply); falls forward to the first body after
+ * the strip when it precedes every body.
+ * @param port - the conversation scrollport.
+ * @param anchor - the clicked per-turn button.
+ * @param bodies - outermost bodies in document order.
+ * @returns the body, or null when the button is not inside the pane.
+ */
+function precedingMarkdown(
+  port: HTMLElement,
+  anchor: Element,
+  bodies: readonly HTMLElement[],
+): HTMLElement | null {
+  const seq = port.querySelectorAll<HTMLElement>(`${ASSISTANT_MD_SELECTOR}, ${TURN_BUTTON_SELECTOR}`)
+  let passed = false
+  let prev: HTMLElement | null = null
+  for (const el of seq) {
+    if (el === anchor) {
+      passed = true
+      continue
+    }
+    if (!el.matches(ASSISTANT_MD_SELECTOR) || outermostOwner(el) !== null) continue
+    if (!passed) {
+      // 按钮之前的最后一条正文（循环继续，后面离按钮更近的会覆盖）。
+      prev = el
+      continue
+    }
+    // 按钮之后才遇到正文：正常布局（动作条在回复下方）优先用 prev；
+    // 只有按钮排在自己回复上方时 prev 为空，才回落到这条后继正文。
+    return prev ?? el
+  }
+  return passed ? prev ?? bodies[0] ?? null : null
 }
 
 /**

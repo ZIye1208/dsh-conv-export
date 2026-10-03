@@ -2,7 +2,7 @@
   "$schema": "https://deepseek.com/harness/schemas/plugin-manifest/v1.json",
   "id": "@dsh-external/dsh-conv-export",
   "name": "dsh-conv-export",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "dsh-conv-export（对话导出）— export the current conversation, or a single assistant turn, as Markdown, single-file HTML, PDF, or a long PNG image, or copy it as Markdown. Batch export removed in this fork.",
   "author": "beijingwahw",
   "license": "MIT",

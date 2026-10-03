@@ -1,6 +1,4 @@
 import type { ExtractedMessage } from './extract.ts';
-/** Class shared by every per-turn export button (strip entry + CSS hooks). */
-export declare const TURN_BUTTON_CLASS = "dsh-conv-export-turn";
 /**
  * 回合预览文案：压缩空白并截断至 80 字符（选择面板条目）。
  * 纯函数，导出仅为单测。
@@ -29,10 +27,12 @@ declare class ExportController {
     /**
      * Toggle the dropdown (header button **or** per-turn strip button),
      * anchoring it under the triggering element. 选择面板打开时不弹菜单。
-     * 打开时按触发器判定模式：每轮按钮 → 单轮提取；头部按钮 → 全会话。
+     * 打开时按触发器判定模式：每轮按钮 → 单轮提取（messageId 用于精确定位）；
+     * 头部按钮 → 全会话。
      * @param anchor - the button that owns the menu (positions it).
+     * @param messageId - slot-provided assistant message id (per-turn only).
      */
-    toggle(anchor?: Element): void;
+    toggle(anchor?: Element, messageId?: string): void;
     /** Close the dropdown. */
     close(): void;
     /** Build the dropdown once and hide it until opened. */

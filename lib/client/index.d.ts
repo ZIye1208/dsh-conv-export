@@ -41,8 +41,8 @@ interface ClientContextFace {
     effect(effect: () => (() => void) | void, label?: string): () => Promise<void>;
 }
 /**
- * The slot props this plugin ignores (header kit / strip `messageId`); the
- * buttons resolve their own scope from the DOM instead.
+ * Slot props: the header kit carries `sessionId`; the assistant-actions strip
+ * carries `messageId`, which pins the exact reply during extraction.
  */
 interface SlotProps {
     readonly sessionId?: string;

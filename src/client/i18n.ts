@@ -75,16 +75,27 @@ const en: Record<ExportKey, string> = {
 }
 
 /**
- * Detect the UI language once: the document lang attribute wins, then the
- * navigator; anything Chinese-prefixed maps to zh, everything else to en.
- * @returns the active dictionary.
+ * Resolve the live language source for the current document.
+ *
+ * 早期版本在第一次 `t()` 时把字典缓存死，而插件 `apply` 早于 locale 插件把
+ * `<html lang>` 写成 `zh-CN`（静态 index.html 声明的是产品默认 `en`），
+ * 于是菜单与导出文档被永久钉在英文。这里每次按当前 lang 判定、只缓存源串：
+ * 语言切换立刻跟随，且没有重复解析开销。另外，`en` 是未被 locale 插件
+ * 触碰过的产品默认值，此时让浏览器语言兜底（中文系统 → 中文界面）。
+ * @returns the language source to key the dictionary on.
  */
-function detectDict(): Record<ExportKey, string> {
-  const lang = (document.documentElement.lang || navigator.language || 'en').toLowerCase()
-  return lang.startsWith('zh') ? zh : en
+function liveSource(): string {
+  const doc = (document.documentElement.lang || '').toLowerCase()
+  const nav = (navigator.language || navigator.languages?.[0] || '').toLowerCase()
+  if (doc !== '') return doc === 'en' && nav.startsWith('zh') ? nav : doc
+  return nav.startsWith('zh') ? nav : nav === '' ? 'en' : nav
 }
 
-let active: Record<ExportKey, string> | undefined
+/** Last observed language source ("" = not resolved yet). */
+let cachedSource = ''
+
+/** Dictionary for {@link cachedSource}. */
+let active: Record<ExportKey, string> = zh
 
 /**
  * Translate one key.
@@ -92,6 +103,10 @@ let active: Record<ExportKey, string> | undefined
  * @returns the localized text.
  */
 export function t(key: ExportKey): string {
-  active ??= detectDict()
+  const source = liveSource()
+  if (source !== cachedSource) {
+    cachedSource = source
+    active = source.startsWith('zh') ? zh : en
+  }
   return active[key]
 }

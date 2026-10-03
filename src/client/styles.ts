@@ -79,9 +79,10 @@ const STYLE_TEXT = `
 }
 
 /* ---- per-turn export entry (assistant-actions strip) ----
-   同一 28px 图标按钮，但作为助手气泡动作条的一员，颜色跟随该条的
-   currentColor（明暗主题、皮肤改动都不必感知）。 */
-.dsh-conv-export-turn {
+   挂载时会把同排按钮的 class 抄过来（adoptStripLook），因此颜色、尺寸、
+   hover 与皮肤样式天然一致；下面 :where() 的兜底基础式特异性为 0，
+   只在没抄到 class（同排尚无其它按钮）时生效，绝不与主题抢优先级。 */
+:where(.dsh-conv-export-turn) {
   appearance: none;
   align-items: center;
   background: transparent;
@@ -96,12 +97,14 @@ const STYLE_TEXT = `
   padding: 6px;
   width: 28px;
   flex: none;
+  line-height: 0;
+  vertical-align: middle;
   transition: background .13s ease, color .13s ease;
 }
-.dsh-conv-export-turn:hover {
+:where(.dsh-conv-export-turn:hover) {
   background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, .12));
 }
-.dsh-conv-export-turn:active {
+:where(.dsh-conv-export-turn:active) {
   transform: scale(.94);
 }
 .dsh-conv-export-turn[aria-pressed="true"] {
