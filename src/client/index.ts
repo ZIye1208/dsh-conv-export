@@ -1,26 +1,31 @@
 /**
  * dsh-conv-export browser half: export the current conversation as
- * Markdown, PDF, or a long PNG image.
+ * Markdown, PDF, or a long PNG image — from the session header, or from a
+ * single assistant turn's own strip button.
  *
- * One contribution: an export icon button in the session header's action
- * row, registered into the harness's `conversation.session.header.actions`
- * slot (the additive seat for per-session controls beside the title). The
- * button opens a dropdown with the five sinks; extraction runs at click
- * time over the rendered transcript, so exports always match what the
- * reader sees.
+ * Two contributions:
+ * 1. an export icon button in the session header's action row, registered
+ *    into `conversation.session.header.actions` (the additive seat for
+ *    per-session controls beside the title);
+ * 2. a per-turn export button in `conversation.chat.assistant-actions` —
+ *    the IconActions strip under every finalized assistant reply — which
+ *    opens the same dropdown scoped to that turn only.
  *
- * Zero core changes: everything rides cordis effects and the declared slot.
+ * Zero core changes: everything rides cordis effects and declared slots.
  */
 import { createElement, type ReactElement } from 'react'
-import { controller } from './controller.ts'
+import { controller, TURN_BUTTON_CLASS } from './controller.ts'
 import { adoptStyles } from './styles.ts'
 import { t } from './i18n.ts'
 
 /** Stable Cordis plugin name (matches the manifest id). */
 export const name = '@dsh-external/dsh-conv-export'
 
-/** Required services: the slot registry (the header action seat rides it). */
+/** Required services: the slot registry (both seats ride it). */
 export const inject = ['slots']
+
+/** The two slot keys this plugin contributes to. */
+type SlotKey = 'conversation.session.header.actions' | 'conversation.chat.assistant-actions'
 
 /**
  * Minimal structural face of the slot service this plugin uses. Declared
@@ -29,15 +34,15 @@ export const inject = ['slots']
  * service shape every stock web app provides.
  */
 interface SlotsFace {
-  inject(key: 'conversation.session.header.actions', callback: () => () => void): () => void
+  inject(key: SlotKey, callback: () => () => void): () => void
   register(
     options: {
-      name: 'conversation.session.header.actions'
+      name: SlotKey
       id: string
       order: number
       inject: () => Record<string, never>
     },
-    component: (props: HeaderActionProps) => ReactElement | null,
+    component: (props: SlotProps) => ReactElement | null,
   ): () => void
 }
 
@@ -48,24 +53,21 @@ interface ClientContextFace {
 }
 
 /**
- * The header action button props. The slot renderer spreads the standard
- * session kit (sessionId, useSession, ...) plus the owner share; the button
- * needs none of it, so the type stays open.
+ * The slot props this plugin ignores (header kit / strip `messageId`); the
+ * buttons resolve their own scope from the DOM instead.
  */
-interface HeaderActionProps {
+interface SlotProps {
   readonly sessionId?: string
+  readonly messageId?: string
 }
 
 /**
- * The session-header export button: toggles the dropdown. Pure presentation
- * over the global controller.
- * @param _props - the slot's standard kit (unused).
- * @returns the icon button.
+ * Inline 16px download glyph (no icon-package import keeps the bundle's
+ * only runtime dependency on React).
+ * @returns the glyph element.
  */
-function ExportActionButton(_props: HeaderActionProps): ReactElement {
-  // Inline 16px download glyph (no icon-package import keeps the bundle's
-  // only runtime dependency on React).
-  const icon = createElement(
+function downloadGlyph(): ReactElement {
+  return createElement(
     'svg',
     { viewBox: '0 0 16 16', width: 16, height: 16, fill: 'none', 'aria-hidden': true },
     createElement('path', {
@@ -82,6 +84,15 @@ function ExportActionButton(_props: HeaderActionProps): ReactElement {
       strokeLinecap: 'round',
     }),
   )
+}
+
+/**
+ * The session-header export button: toggles the dropdown. Pure presentation
+ * over the global controller.
+ * @param _props - the slot's standard kit (unused).
+ * @returns the icon button.
+ */
+function ExportActionButton(_props: SlotProps): ReactElement {
   return createElement(
     'button',
     {
@@ -94,13 +105,36 @@ function ExportActionButton(_props: HeaderActionProps): ReactElement {
         controller.toggle(e.currentTarget as Element)
       },
     },
-    icon,
+    downloadGlyph(),
+  )
+}
+
+/**
+ * The per-turn export button rendered into every finalized assistant
+ * reply's IconActions strip: opens the same dropdown scoped to this turn.
+ * @param _props - the strip's kit (`messageId`, unused — scope comes from DOM).
+ * @returns the icon button.
+ */
+function TurnExportButton(_props: SlotProps): ReactElement {
+  return createElement(
+    'button',
+    {
+      type: 'button',
+      className: TURN_BUTTON_CLASS,
+      title: t('turn.hint'),
+      'aria-label': t('turn.aria'),
+      'aria-pressed': 'false',
+      onClick: (e: { currentTarget: EventTarget }) => {
+        controller.toggle(e.currentTarget as Element)
+      },
+    },
+    downloadGlyph(),
   )
 }
 
 /**
  * Browser plugin body: install the controller's document effects and
- * register the header action button into the session header slot.
+ * register both export buttons into their slots.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContextFace): void {
@@ -121,4 +155,13 @@ export function apply(ctx: ClientContextFace): void {
     order: 110,
     inject: () => ({}),
   }, ExportActionButton))
+
+  // Per-turn entry in the assistant strip (copy / like / dislike / … row).
+  // order 50 lands after the feedback entry (10) and before late extras.
+  ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
+    name: 'conversation.chat.assistant-actions',
+    id: 'dsh-conv-export-turn',
+    order: 50,
+    inject: () => ({}),
+  }, TurnExportButton))
 }

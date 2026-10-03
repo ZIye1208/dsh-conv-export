@@ -52,6 +52,42 @@ export declare function readTitle(): string | null;
  */
 export declare function extractMessages(scope?: HTMLElement | null): ExtractedMessage[];
 /**
+ * Build one user turn from its row node (bubble text, falling back to the
+ * whole row when the bubble class is absent).
+ * @param node - the `_userRow` element.
+ * @returns the turn, or null when the row renders no text (empty shell).
+ */
+export declare function fromUserRow(node: HTMLElement): ExtractedMessage | null;
+/**
+ * Build one assistant turn from its markdown container (skip empty shells —
+ * still-streaming placeholders render no text yet).
+ * @param node - the `_markdown_` element.
+ * @returns the turn, or null when the container renders no text.
+ */
+export declare function fromMarkdownNode(node: HTMLElement): ExtractedMessage | null;
+/** Per-turn extraction result (the assistant-actions strip's export entry). */
+export interface TurnExtract {
+    /** The turn(s) inside the anchored wrapper, in document order. */
+    readonly messages: readonly ExtractedMessage[];
+    /** 1-based ordinal among every assistant markdown container in the pane; 0 = unknown. */
+    readonly index: number;
+}
+/**
+ * Extract the single turn that owns `anchor` — the per-turn export button
+ * rendered into `conversation.chat.assistant-actions`.
+ *
+ * Resolution order:
+ * 1. the nearest `[data-chat-anchor-key]` ancestor (DSH renders one chat-node
+ *    seat per turn; extracting inside it yields exactly that segment);
+ * 2. fallback — the top-level markdown container closest to the button
+ *    (deepest shared ancestor wins), so a future seat rename degrades to
+ *    "the reply next to this button" instead of nothing.
+ *
+ * @param anchor - the per-turn export button (or any node inside the strip).
+ * @returns the turn payload, or null when no rendered body is reachable.
+ */
+export declare function extractTurn(anchor: Element): TurnExtract | null;
+/**
  * Sanitize a string into a safe download-file stem: path/hostile characters
  * and runs of whitespace collapse to '-', capped at 60 chars.
  * @param raw - the proposed file name stem (e.g. the session title).
