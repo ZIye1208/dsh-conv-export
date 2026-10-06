@@ -173,6 +173,13 @@ class ExportController {
     // menu only ever holds booleans, so "not false" is the hidden state.
     const open = this.menu.hidden !== false
     this.menu.hidden = !open
+    // [local-patch role-menu] role 只在菜单展开期间存在：展开=真弹层（可合理拦截快捷键），
+    // 收起即摘除，避免 DSH 快捷键调度器把页面判成「弹层常开」。
+    if (open) {
+      this.menu.setAttribute('role', 'menu')
+    } else {
+      this.menu.removeAttribute('role')
+    }
     if (open) {
       this.trigger = anchor instanceof HTMLElement ? anchor : null
       this.turn = anchor instanceof HTMLElement && anchor.classList.contains(TURN_BUTTON_CLASS)
@@ -194,6 +201,7 @@ class ExportController {
   close(): void {
     if (this.menu === null || this.menu.hidden) return
     this.menu.hidden = true
+    this.menu.removeAttribute('role') // [local-patch role-menu]
     this.syncActionButton(false)
     this.turn = null
   }
@@ -205,7 +213,9 @@ class ExportController {
     const menu = document.createElement('div')
     menu.setAttribute('data-dsh-conv-export-menu', '')
     menu.hidden = true
-    menu.setAttribute('role', 'menu')
+    // [local-patch role-menu] 此处不再常驻 role="menu"，改为随开合同步（见 toggle/close）。
+    // 常驻的 role="menu"（即使 hidden）会被 DSH 快捷键调度器的 modalSelector 命中，
+    // 使 context.modal 恒为 "other"，从而拦截所有已配置的全局快捷键。
 
     /** 菜单项视觉规格：图标 + 文案 + 右侧标注（格式标签或子面板箭头）。 */
     const entries: Array<{
