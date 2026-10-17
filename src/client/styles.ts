@@ -126,6 +126,9 @@ const STYLE_TEXT = `
   flex-direction: column;
   gap: 2px;
   min-width: 236px;
+  /* 矮视口兜底：上下都放不下时菜单自身可滚动，永不越出视口。 */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   padding: 7px;
   background: var(--cx-bg);
   border: 1px solid var(--cx-line);
@@ -140,6 +143,12 @@ const STYLE_TEXT = `
 }
 [data-dsh-conv-export-menu][hidden] {
   display: none;
+}
+/* 下方放不下时菜单翻到按钮上方（data-cx-dir="up"）：原点与入场方向
+   一起翻转，避免「从下往上弹」的错位感。 */
+[data-dsh-conv-export-menu][data-cx-dir="up"] {
+  transform-origin: bottom right;
+  animation-name: dsh-conv-export-menu-in-up;
 }
 [data-dsh-conv-export-menu] button {
   appearance: none;
@@ -751,6 +760,10 @@ const STYLE_TEXT = `
 }
 @keyframes dsh-conv-export-menu-in {
   from { opacity: 0; transform: translateY(-4px) scale(.97) }
+  to { opacity: 1; transform: translateY(0) scale(1) }
+}
+@keyframes dsh-conv-export-menu-in-up {
+  from { opacity: 0; transform: translateY(4px) scale(.97) }
   to { opacity: 1; transform: translateY(0) scale(1) }
 }
 @keyframes dsh-conv-export-panel-in {

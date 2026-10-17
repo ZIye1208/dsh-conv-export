@@ -38,6 +38,7 @@ import {
 } from './extract.ts'
 import type { ExtractedMessage, TurnExtract } from './extract.ts'
 import { buildMarkdown } from './markdown.ts'
+import { placeMenu } from './place.ts'
 import { copyText, downloadBlob, exportHtml, exportImage, exportPdf } from './exporters.ts'
 import { t } from './i18n.ts'
 
@@ -188,10 +189,14 @@ class ExportController {
       this.menu.setAttribute('data-mode', this.turn !== null ? 'turn' : 'session')
       if (this.trigger !== null) {
         const rect = this.trigger.getBoundingClientRect()
-        const width = this.menu.offsetWidth
-        const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))
-        this.menu.style.top = `${Math.round(rect.bottom + 6)}px`
-        this.menu.style.left = `${Math.round(left)}px`
+        const placement = placeMenu(
+          { top: rect.top, bottom: rect.bottom, right: rect.right },
+          { width: this.menu.offsetWidth, height: this.menu.offsetHeight },
+          { width: window.innerWidth, height: window.innerHeight },
+        )
+        this.menu.style.top = `${placement.top}px`
+        this.menu.style.left = `${placement.left}px`
+        this.menu.setAttribute('data-cx-dir', placement.dir)
       }
     }
     this.syncActionButton(open)
