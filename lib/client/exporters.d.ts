@@ -24,6 +24,12 @@
  */
 import type { ExtractedMessage } from './extract.ts';
 /**
+ * 下载文件词干：本地时间戳前缀 + 安全化标题，形如 20261123-0036-标题。
+ * @param title - 会话标题。
+ * @returns 带时间戳的文件词干（时间戳与标题以 '-' 连接）。
+ */
+export declare function timestampedStem(title: string): string;
+/**
  * 触发客户端文件下载。
  * @param filename - 下载文件名。
  * @param mime - blob MIME 类型。
@@ -60,6 +66,8 @@ export interface RasterExportOptions {
     readonly onProgress?: RasterProgress;
     /** 取消信号：触发后正在进行的导出以 AbortError 拒绝。 */
     readonly signal?: AbortSignal;
+    /** 已含时间戳与单轮后缀的文件词干；缺省时由标题按当前时间生成。 */
+    readonly fileStem?: string;
 }
 /**
  * CRC-32（多段输入）。纯函数，导出仅为单测。

@@ -25,6 +25,7 @@ declare const zh: {
     'toast.copyDone': string;
     'toast.copyFail': string;
     'toast.cancelled': string;
+    'toast.empty': string;
     'panel.title': string;
     'panel.caption': string;
     'panel.close': string;
