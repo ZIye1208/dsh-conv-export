@@ -73,6 +73,18 @@ const EXPORT_CSS = `
 `
 
 /**
+ * 下载文件词干：本地时间戳前缀 + 安全化标题，形如 20261123-0036-标题。
+ * @param title - 会话标题。
+ * @returns 带时间戳的文件词干（时间戳与标题以 '-' 连接）。
+ */
+export function timestampedStem(title: string): string {
+  const now = new Date()
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+  return `${stamp}-${safeFileStem(title)}`
+}
+
+/**
  * 触发客户端文件下载。
  * @param filename - 下载文件名。
  * @param mime - blob MIME 类型。
@@ -182,6 +194,8 @@ export interface RasterExportOptions {
   readonly onProgress?: RasterProgress
   /** 取消信号：触发后正在进行的导出以 AbortError 拒绝。 */
   readonly signal?: AbortSignal
+  /** 已含时间戳与单轮后缀的文件词干；缺省时由标题按当前时间生成。 */
+  readonly fileStem?: string
 }
 
 /**
@@ -714,7 +728,7 @@ export async function exportPdf(
         options?.onProgress?.(done, pageCount)
       }
     }
-    downloadBlob(`${safeFileStem(title)}.pdf`, 'application/pdf', buildPdf(pages))
+    downloadBlob(`${options?.fileStem ?? timestampedStem(title)}.pdf`, 'application/pdf', buildPdf(pages))
   } finally {
     stage.dispose()
   }
@@ -747,7 +761,7 @@ export async function exportImage(
       await encoder.pushTile(tile)
       options?.onProgress?.(piece.index + 1, piece.total)
     }
-    downloadBlob(`${safeFileStem(title)}.png`, 'image/png', await encoder.finish())
+    downloadBlob(`${options?.fileStem ?? timestampedStem(title)}.png`, 'image/png', await encoder.finish())
   } finally {
     stage.dispose()
   }
@@ -769,7 +783,7 @@ async function exportImageLegacy(
     const canvas = await stage.tile(0, height)
     const blob = await new Promise<Blob | null>(resolve => { canvas.toBlob(resolve, 'image/png') })
     if (blob === null) throw new Error('toBlob failed')
-    downloadBlob(`${safeFileStem(title)}.png`, 'image/png', blob)
+    downloadBlob(`${options?.fileStem ?? timestampedStem(title)}.png`, 'image/png', blob)
   } finally {
     stage.dispose()
   }
@@ -794,5 +808,5 @@ export async function exportHtml(
   holder.innerHTML = buildExportHtml(title, messages)
   await inlineImages(holder)
   throwIfAborted(options?.signal)
-  downloadBlob(`${safeFileStem(title)}.html`, 'text/html;charset=utf-8', buildHtmlDocument(title, holder.innerHTML))
+  downloadBlob(`${options?.fileStem ?? timestampedStem(title)}.html`, 'text/html;charset=utf-8', buildHtmlDocument(title, holder.innerHTML))
 }

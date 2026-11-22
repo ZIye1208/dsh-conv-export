@@ -33,13 +33,12 @@ import {
   extractTurn,
   readTitle,
   resolveScope,
-  safeFileStem,
   TURN_BUTTON_CLASS,
 } from './extract.ts'
 import type { ExtractedMessage, TurnExtract } from './extract.ts'
 import { buildMarkdown } from './markdown.ts'
 import { placeMenu } from './place.ts'
-import { copyText, downloadBlob, exportHtml, exportImage, exportPdf } from './exporters.ts'
+import { copyText, downloadBlob, exportHtml, exportImage, exportPdf, timestampedStem } from './exporters.ts'
 import { t } from './i18n.ts'
 
 /** Export sink ids. */
@@ -337,7 +336,11 @@ class ExportController {
     // 打开时已按触发器分流：turn 非 null = 单轮模式，只导出这一轮。
     const turn = this.turn
     const messages = turn !== null ? [...turn.messages] : extractMessages()
-    if (messages.length === 0) return
+    if (messages.length === 0) {
+      this.toast(t('toast.empty'))
+      this.close()
+      return
+    }
     const button = this.menu?.querySelector(`[data-export-kind="${kind}"]`) ?? null
     try {
       await this.execute(kind, messages, {
@@ -364,7 +367,7 @@ class ExportController {
     stemSuffix?: string,
   ): Promise<void> {
     const title = readTitle() ?? 'Conversation'
-    const stem = safeFileStem(stemSuffix === undefined ? title : `${title}${stemSuffix}`)
+    const stem = timestampedStem(stemSuffix === undefined ? title : `${title}${stemSuffix}`)
     const abort = new AbortController()
     this.running = { kind, abort }
     const onProgress = (done: number, total: number): void => {
@@ -382,11 +385,11 @@ class ExportController {
         await copyText(buildMarkdown(title, messages))
         this.toast(t('toast.copyDone'))
       } else if (kind === 'html') {
-        await exportHtml(title, messages, { signal: abort.signal })
+        await exportHtml(title, messages, { signal: abort.signal, fileStem: stem })
       } else if (kind === 'pdf') {
-        await exportPdf(title, messages, { signal: abort.signal, onProgress })
+        await exportPdf(title, messages, { signal: abort.signal, onProgress, fileStem: stem })
       } else {
-        await exportImage(title, messages, { signal: abort.signal, onProgress })
+        await exportImage(title, messages, { signal: abort.signal, onProgress, fileStem: stem })
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -424,7 +427,11 @@ class ExportController {
    */
   private openSelection(): void {
     const messages = extractMessages()
-    if (messages.length === 0) return
+    if (messages.length === 0) {
+      this.toast(t('toast.empty'))
+      this.close()
+      return
+    }
     this.close()
     this.closePanel()
 
@@ -588,7 +595,10 @@ class ExportController {
         return
       }
       const selected = messages.filter((_, i) => checked[i])
-      if (selected.length === 0) return
+      if (selected.length === 0) {
+        this.toast(t('panel.empty'))
+        return
+      }
       void this.execute(format, selected, {
         el: confirmBtn,
         baseLabel: `${t('panel.export')} (${selected.length})`,
